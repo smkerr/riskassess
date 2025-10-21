@@ -10,11 +10,11 @@ read_shape <- function(file, scores) {
   placevar <- names(scores)[1]
 
   if(!placevar %in% names(shape))
-    stop(glue("The column '{placevar}' is not found in shapefile"))
+    stop(paste("The column", placevar, "is not found in shapefile"))
 
   missing <- setdiff(scores[[1]], shape[[placevar]])
   if(length(missing) > 0)
-    stop(glue("The following places are missing in shapefile: {paste0(missing, collapse = ", ")}"))
+    stop(paste("The following places are missing in shapefile:", paste0(missing, collapse = ", ")))
 
   return(shape)
 
