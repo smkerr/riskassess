@@ -114,7 +114,7 @@ run_riskassess <- function() {
              )
       )
 
-      output$tables <- renderDataTable(
+      output$tables <- DT::renderDT(
         vis_risk_table(values$risks, values$weightings),
         options = list(
           order = if(!is.null(values$risks))
