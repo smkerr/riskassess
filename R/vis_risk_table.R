@@ -8,18 +8,35 @@
 #' @param risk The updated risk table access via \code{values$}
 #' @param weightings The updated weightings access via \code{values$}
 #'
-vis_risk_table <- function(risk, weightings) {
+vis_risk_table <- function(tbl, weightings, key_col = NULL) {
+  if (is.null(tbl) || is.null(weightings)) {
+    return(NULL)
+  }
 
-  if(is.null(risk) | is.null(weightings)) return(NULL)
+  # Identify key column
+  if (is.null(key_col)) {
+    key_col <- names(tbl)[1]
+  }
 
-  risk %>%
-    mutate(across(-1, ~ sprintf("%.2f", .x))) %>%
-    ## add percent weighting to the table
-    rename_with(
-      \(nms) map_chr(nms, function(nm) {
-        mtch <- match(nm, names(weightings))
-        if(!is.na(mtch)) paste0(nm, " (", percent(weightings[mtch]), ")")
-        else nm
-      }))
+  # ---- STEP 1: Sort by last column (descending) ----
+  last_col <- names(tbl)[ncol(tbl)]
+  tbl <- tbl[order(tbl[[last_col]], decreasing = TRUE), ]
 
+  # ---- STEP 2: Format numeric columns to 2 decimals ----
+  tbl_fmt <- tbl %>%
+    mutate(across(where(is.numeric), ~ sprintf("%.2f", .x)))
+
+  # ---- STEP 3: Add % to weight-bearing columns ----
+  tbl_fmt <- tbl_fmt %>%
+    rename_with(function(cols) {
+      sapply(cols, function(col) {
+        if (col %in% names(weightings)) {
+          paste0(col, " (", scales::percent(weightings[col]), ")")
+        } else {
+          col
+        }
+      })
+    })
+
+  tbl_fmt
 }

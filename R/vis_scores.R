@@ -4,26 +4,35 @@
 #'
 #' @author Finlay Campbell
 #'
-vis_scores <- function(risks, shape, value,
-                       value_label = "Score",
-                       label_place = FALSE,
-                       title = NULL) {
+vis_scores <- function(
+  risks,
+  shape,
+  value,
+  value_label = "Score",
+  label_place = FALSE,
+  title = NULL
+) {
+  if (is.null(risks) | is.null(shape) | is.na(value)) {
+    return(NULL)
+  }
 
-  if(is.null(risks) | is.null(shape) | is.na(value)) return(NULL)
-
-  if(label_place)
+  if (label_place) {
     place_label <- geom_text(
-      data = unnest_wider(mutate(
-        shape,
-        centroid = map_dfr(
-          geometry,
-          ~ as.data.frame(st_coordinates(st_centroid(.x)))
-        )
-      ), col = "centroid"),
+      data = unnest_wider(
+        mutate(
+          shape,
+          centroid = map_dfr(
+            geometry,
+            ~ as.data.frame(st_coordinates(st_centroid(.x)))
+          )
+        ),
+        col = "centroid"
+      ),
       mapping = aes(X, Y, label = !!sym(names(risks)[1]))
     )
-  else
+  } else {
     place_label <- NULL
+  }
 
   risks %>%
     right_join(shape, by = names(risks)[1]) %>%
@@ -44,5 +53,4 @@ vis_scores <- function(risks, shape, value,
       legend.title = element_text(vjust = 0.7),
       legend.title.align = 0.5
     )
-
 }
