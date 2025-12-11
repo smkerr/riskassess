@@ -4,28 +4,37 @@
 #'
 #' @author Finlay Campbell
 #'
-read_data <- function(file) {
+read_data <- function(path) {
 
-  ## read headers and scores themselves
-  headers <- names(suppressMessages(read_excel(file))[1,-1])
-  scores <- read_excel(file, skip = 1) %>%
-    mutate(across(-1, as.numeric))
+  # --- Read both sheets ---
+  indicator_data <- readxl::read_excel(path, sheet = "Indicator Data", skip = 2)
+  indicator_meta <- readxl::read_excel(path, sheet = "Indicator Metadata") |> 
+    filter(Include)
 
-  ## get column indices of different groups
-  header_start <- which(!grepl("\\.\\.\\.", headers))
-  header_end <- lead(header_start) - 1
-  header_end[is.na(header_end)] <- length(headers)
+  # --- Extract indicator columns automatically ---
+  indicator_cols <- setdiff(names(indicator_data), c("Adm0", "Adm1"))
 
-  groupings <- map2(
-    setNames(header_start, headers[header_start]), header_end,
-    function(start, end) {
-      setNames(
-        rep(1/length(start:end), length(start:end)),
-        names(scores)[-1][start:end]
-      )
-    }
-  )
+  # --- Filter metadata so it only includes indicators present in the data ---
+  meta_clean <- indicator_meta %>%
+    filter(Indicator %in% indicator_cols)
 
-  return(list(groupings = groupings, scores = scores))
+  # --- Build groupings: pillar → vector of equal-weight indicators ---
+  groupings <- meta_clean %>%
+    split(.$Pillar) %>%      # split into Exposure / Vulnerability / LOCC
+    lapply(function(df) {
+      n <- nrow(df)
+      w <- rep(1/n, n)       # equal weights for each indicator
+      names(w) <- df$Indicator
+      w
+    })
 
+  # --- Scores table ---
+  scores <- indicator_data %>%
+    select(Adm1, all_of(indicator_cols))
+
+  return(list(
+    scores = scores,
+    groupings = groupings,
+    metadata = meta_clean
+  ))
 }

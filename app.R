@@ -109,7 +109,17 @@ ui <- page_sidebar(
 server <- function(input, output) {
   data <- reactive({
     req(input$upload_data)
-    read_data(input$upload_data$datapath)
+    tryCatch(
+      read_data(input$upload_data$datapath),
+      error = function(e) {
+        showNotification(
+          paste("Error reading uploaded file:", e$message),
+          type = "error",
+          duration = 10
+        )
+        return(NULL)
+      }
+    )
   })
 
   shape <- reactive({
@@ -121,16 +131,35 @@ server <- function(input, output) {
       iso3 = "UKR",
       query_server = TRUE
     ) %>%
-      rename(Oblast = adm1_viz_name)
+      rename(Adm1 = adm1_viz_name)
   })
 
   values <- reactiveValues(risks = NULL)
 
   observe({
+    # Do nothing until a valid dataset exists
+    req(!is.null(data()))
+
+    # Minimal hard stop if required pieces are missing or empty
+    if (
+      is.null(data()$scores) ||
+        ncol(data()$scores) == 0 ||
+        is.null(data()$groupings) ||
+        length(data()$groupings) == 0
+    ) {
+      showNotification(
+        "Uploaded file doesn’t match the expected template (missing scores/groupings).",
+        type = "error",
+        duration = 10
+      )
+      values$risks <- NULL
+      return()
+    }
+
     values$groupings <- map(
       data()$groupings,
       ~ imap_dbl(.x, function(x, y) {
-        if (!is.null(input[[y]])) input[[y]] else (x)
+        if (!is.null(input[[y]])) input[[y]] else x
       })
     ) %>%
       map(~ .x / sum(.x))
@@ -144,10 +173,20 @@ server <- function(input, output) {
       setNames(names(data()$groupings))
     weightings <- values$weightings
 
-    values$risks <- get_risks(
-      groupings = groupings,
-      scores = data()$scores,
-      weightings = weightings
+    values$risks <- tryCatch(
+      get_risks(
+        groupings = groupings,
+        scores = data()$scores,
+        weightings = weightings
+      ),
+      error = function(e) {
+        showNotification(
+          paste("Couldn’t compute risks:", e$message),
+          type = "error",
+          duration = 10
+        )
+        NULL
+      }
     )
 
     # === PER-TAB TABLE OUTPUTS =========================================
@@ -157,7 +196,7 @@ server <- function(input, output) {
       vis_risk_table(values$risks, values$weightings),
       rownames = FALSE,
       options = list(
-        order = list(match("Total", names(values$risks)) - 1, "desc"),
+        order = FALSE,
         pageLength = 15,
         searching = FALSE
       )
@@ -233,7 +272,10 @@ server <- function(input, output) {
   })
 
   observe({
+    req(!is.null(data()))
+    req(!is.null(values$groupings))
     output$pillar_weights <- renderUI({
+      validate(need(!is.null(data()), "Please upload a valid file."))
       map(names(data()$groupings), function(i) {
         sliderInput(inputId = i, label = i, min = 0, max = 10, value = 5)
       })
@@ -264,8 +306,8 @@ server <- function(input, output) {
 
     # ---- YOUR MAP OUTPUT SECTION ----
     output$maps <- renderUI({
+      validate(need(!is.null(data()), "No valid data available."))
       req(values$risks, shape())
-
       nms <- c(names(data()$groupings), "Total") # 4 names expected
 
       # Build 4 cells

@@ -15,7 +15,7 @@ make_indicator_table <- function(scores, risks, groupings, pillar_name) {
 
   # Build final table
   tibble(
-    Oblast = scores$Oblast,
+    Adm1 = scores$Adm1,
     raw,
     !!pillar_name := pillar_scores
   )
