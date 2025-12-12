@@ -4,13 +4,14 @@ library(purrr)
 library(magrittr)
 library(ggplot2)
 library(DT)
+library(openxlsx)
 library(readxl)
 library(sf)
 library(scales)
 library(bslib)
 library(whomapper)
 
-# Load helper functions when running the app from the source tree.
+# Load helper functions
 helper_files <- file.path(
   "R",
   c(
@@ -36,8 +37,8 @@ ui <- page_sidebar(
       tabPanel(
         title = "Upload/Download",
         fileInput("upload_data", "Upload Risk Scores", accept = ".xlsx"),
-        downloadButton("download_data", "Download Scores"),
-        downloadButton("download_weightings", "Download Weightings")
+        h3("Download "),
+        downloadButton("download_updated_file", "Download Updated Workbook")
       ),
       tabPanel(
         title = "Select Pillar Weights",
@@ -52,52 +53,33 @@ ui <- page_sidebar(
 
   tags$style(HTML(
     "
-  .map-grid {
-    display: grid;
-    grid-template-columns: 20% 20% 20% 40%; /* 3 x 20% = 60%, last = 40% */
-    gap: 20px;
-    align-items: start;
-  }
-  .map-cell {
-    padding: 5px;
-  }
-"
+    .map-grid {
+      display: grid;
+      grid-template-columns: 20% 20% 20% 40%;
+      gap: 20px;
+      align-items: start;
+    }
+    .map-cell {
+      padding: 5px;
+    }
+    "
   )),
 
   fluidRow(
     column(
       width = 12,
       h3("Risk Scores"),
-
       tabsetPanel(
         id = "score_tabs",
 
-        tabPanel(
-          "Overall Risk Score",
-          br(),
-          dataTableOutput("table_overall")
-        ),
-
-        tabPanel(
-          "Exposure",
-          br(),
-          dataTableOutput("table_exposure")
-        ),
-
-        tabPanel(
-          "Vulnerability",
-          br(),
-          dataTableOutput("table_vulnerability")
-        ),
-
-        tabPanel(
-          "LOCC",
-          br(),
-          dataTableOutput("table_lcc")
-        )
+        tabPanel("Overall Risk Score", br(), dataTableOutput("table_overall")),
+        tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
+        tabPanel("Vulnerability", br(), dataTableOutput("table_vulnerability")),
+        tabPanel("LOCC", br(), dataTableOutput("table_lcc"))
       )
     )
   ),
+
   fluidRow(
     column(
       width = 12,
@@ -107,6 +89,8 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output) {
+
+  # Read uploaded data
   data <- reactive({
     req(input$upload_data)
     tryCatch(
@@ -122,10 +106,9 @@ server <- function(input, output) {
     )
   })
 
+  # Load shapefile for mapping
   shape <- reactive({
     req(input$upload_data)
-
-    # TOD: make generic
     whomapper::pull_sfs(
       adm_level = 1,
       iso3 = "UKR",
@@ -136,16 +119,103 @@ server <- function(input, output) {
 
   values <- reactiveValues(risks = NULL)
 
+  # Stores the editable weight tables loaded from Excel
+  weights <- reactiveValues(
+    pillar = NULL,
+    indicator = NULL
+  )
+
+  # Compute pillar weights from inputs or defaults
+  pillar_weightings <- reactive({
+    req(weights$pillar)
+
+    vals <- vapply(
+      seq_len(nrow(weights$pillar)),
+      function(i) {
+        p <- weights$pillar$Pillar[i]
+        input_val <- input[[paste0("pillar_", p)]]
+        if (is.null(input_val)) weights$pillar$`Pillar Weight`[i] else input_val / 100
+      },
+      numeric(1)
+    )
+
+    vals <- vals / sum(vals, na.rm = TRUE)
+    setNames(vals, weights$pillar$Pillar)
+  })
+
+  # Compute indicator weights within each pillar
+  indicator_groupings <- reactive({
+    req(weights$indicator)
+
+    split(weights$indicator, weights$indicator$Pillar) |>
+      map(function(df) {
+        vals <- vapply(
+          seq_len(nrow(df)),
+          function(i) {
+            id <- paste0("indicator_", df$Pillar[i], "_", i)
+            input_val <- input[[id]]
+            if (is.null(input_val)) df$`Indicator Weight`[i] else input_val / 100
+          },
+          numeric(1)
+        )
+        vals <- vals / sum(vals, na.rm = TRUE)
+        setNames(vals, df$Indicator)
+      })
+  })
+
+  # Update risks and weighting table when new data or inputs change
   observe({
-    # Do nothing until a valid dataset exists
+    req(data(), weights$pillar, weights$indicator)
+
+    values$groupings <- indicator_groupings()
+    values$weightings <- pillar_weightings()
+
+    values$weightings_table <- map_dfr(
+      seq_along(values$weightings),
+      \(x) {
+        tibble(
+          pillar = names(values$groupings)[x],
+          metric  = names(values$groupings[[x]]),
+          pillar_weight = values$weightings[x],
+          metric_weight = values$groupings[[x]],
+          total_weight = values$weightings[x] * values$groupings[[x]]
+        )
+      }
+    )
+
+    values$risks <- get_risks(
+      groupings = values$groupings,
+      scores = data()$scores,
+      weightings = values$weightings
+    )
+  })
+
+  # Load weight tables from uploaded workbook
+  observeEvent(input$upload_data, {
+    req(input$upload_data$datapath)
+
+    weights$pillar <- readxl::read_excel(
+      input$upload_data$datapath,
+      sheet = "Pillar Weights",
+      range = "A1:B4"
+    ) |> as.data.frame()
+
+    weights$indicator <- readxl::read_excel(
+      input$upload_data$datapath,
+      sheet = "Indicator Weights",
+      range = "A9:F24"
+    ) |> as.data.frame()
+  })
+
+  # Main observer for table rendering
+  observe({
     req(!is.null(data()))
 
-    # Minimal hard stop if required pieces are missing or empty
     if (
       is.null(data()$scores) ||
-        ncol(data()$scores) == 0 ||
-        is.null(data()$groupings) ||
-        length(data()$groupings) == 0
+      ncol(data()$scores) == 0 ||
+      is.null(data()$groupings) ||
+      length(data()$groupings) == 0
     ) {
       showNotification(
         "Uploaded file doesn’t match the expected template (missing scores/groupings).",
@@ -156,161 +226,103 @@ server <- function(input, output) {
       return()
     }
 
-    values$groupings <- map(
-      data()$groupings,
-      ~ imap_dbl(.x, function(x, y) {
-        if (!is.null(input[[y]])) input[[y]] else x
-      })
-    ) %>%
-      map(~ .x / sum(.x))
-    groupings <- values$groupings
-
-    values$weightings <- map_dbl(
-      names(data()$groupings),
-      ~ if (!is.null(input[[.x]])) input[[.x]] else 1 / length(data()$groupings)
-    ) %>%
-      (\(x) x / sum(x))() %>%
-      setNames(names(data()$groupings))
-    weightings <- values$weightings
-
-    values$risks <- tryCatch(
-      get_risks(
-        groupings = groupings,
-        scores = data()$scores,
-        weightings = weightings
-      ),
-      error = function(e) {
-        showNotification(
-          paste("Couldn’t compute risks:", e$message),
-          type = "error",
-          duration = 10
-        )
-        NULL
-      }
-    )
-
-    # === PER-TAB TABLE OUTPUTS =========================================
-
-    # Default overall table
     output$table_overall <- DT::renderDT(
       vis_risk_table(values$risks, values$weightings),
       rownames = FALSE,
-      options = list(
-        order = FALSE,
-        pageLength = 15,
-        searching = FALSE
+      options = list(order = FALSE, pageLength = 15, searching = FALSE)
+    )
+
+    output$table_exposure <- DT::renderDT({
+      df <- make_indicator_table(
+        scores = data()$scores,
+        risks = values$risks,
+        groupings = values$groupings,
+        pillar_name = "Exposure"
       )
-    )
+      vis_risk_table(df, values$groupings[["Exposure"]])
+    })
 
-    # Exposure indicator table
-    output$table_exposure <- DT::renderDT(
-      {
-        df <- make_indicator_table(
-          scores = data()$scores,
-          risks = values$risks,
-          groupings = values$groupings, # the normalized groupings
-          pillar_name = "Exposure"
-        )
-        vis_risk_table(df, values$groupings[["Exposure"]])
-      },
-      rownames = FALSE
-    )
+    output$table_vulnerability <- DT::renderDT({
+      df <- make_indicator_table(
+        scores = data()$scores,
+        risks = values$risks,
+        groupings = values$groupings,
+        pillar_name = "Vulnerability"
+      )
+      vis_risk_table(df, values$groupings[["Vulnerability"]])
+    })
 
-    # Vulnerability indicator table
-    output$table_vulnerability <- DT::renderDT(
-      {
-        df <- make_indicator_table(
-          scores = data()$scores,
-          risks = values$risks,
-          groupings = values$groupings,
-          pillar_name = "Vulnerability"
-        )
-        vis_risk_table(df, values$groupings[["Vulnerability"]])
-      },
-      rownames = FALSE
-    )
-
-    # LOCC indicator table
-    output$table_lcc <- DT::renderDT(
-      {
-        df <- make_indicator_table(
-          scores = data()$scores,
-          risks = values$risks,
-          groupings = values$groupings,
-          pillar_name = "LOCC" # or "Lack of Coping Capacity" depending on your naming
-        )
-        vis_risk_table(df, values$groupings[["LOCC"]])
-      },
-      rownames = FALSE
-    )
-
-    values$weightings_table <- map_dfr(
-      seq_along(weightings),
-      \(x) {
-        tibble(
-          pillar = names(groupings)[x],
-          metric = names(groupings[[x]]),
-          pillar_weight = weightings[x],
-          metric_weight = groupings[[x]],
-          total_weight = pillar_weight * metric_weight
-        )
-      }
-    )
+    output$table_lcc <- DT::renderDT({
+      df <- make_indicator_table(
+        scores = data()$scores,
+        risks = values$risks,
+        groupings = values$groupings,
+        pillar_name = "LOCC"
+      )
+      vis_risk_table(df, values$groupings[["LOCC"]])
+    })
 
     output$tables <- DT::renderDT(
       vis_overall_table(values$risks, values$weightings),
       options = list(
         order = if (!is.null(values$risks)) {
           list(match("Total", names(values$risks)) - 1, "desc")
-        } else {
-          list(0, "desc")
-        },
+        } else list(0, "desc"),
         pageLength = 15,
         searching = FALSE
       )
     )
   })
 
+  # UI for editing pillar and indicator weights
   observe({
     req(!is.null(data()))
-    req(!is.null(values$groupings))
+
     output$pillar_weights <- renderUI({
-      validate(need(!is.null(data()), "Please upload a valid file."))
-      map(names(data()$groupings), function(i) {
-        sliderInput(inputId = i, label = i, min = 0, max = 10, value = 5)
-      })
+      req(weights$pillar)
+      tagList(
+        lapply(seq_len(nrow(weights$pillar)), function(i) {
+          pillar_name <- weights$pillar$Pillar[i]
+          pillar_weight <- weights$pillar$`Pillar Weight`[i]
+          numericInput(
+            inputId = paste0("pillar_", pillar_name),
+            label = paste0(pillar_name, " (%)"),
+            value = round(pillar_weight * 100, 2),
+            min = 0, max = 100, step = 5
+          )
+        })
+      )
     })
 
-    output$indicator_weights <- renderUI(
+    output$indicator_weights <- renderUI({
+      req(weights$indicator)
       do.call(
         tabsetPanel,
-        map(
-          names(data()$groupings),
-          function(group) {
-            tabPanel(
-              title = group,
-              map(names(data()$groupings[[group]]), function(j) {
-                sliderInput(
-                  inputId = j,
-                  label = j,
-                  min = 0,
-                  max = 10,
-                  value = 5
+        lapply(unique(weights$indicator$Pillar), function(pillar) {
+          df <- weights$indicator |> filter(Pillar == pillar)
+          tabPanel(
+            title = pillar,
+            tagList(
+              lapply(seq_len(nrow(df)), function(i) {
+                numericInput(
+                  inputId = paste0("indicator_", pillar, "_", i),
+                  label = paste0(df$Indicator[i], " (%)"),
+                  value = round(df$`Indicator Weight`[i] * 100, 2),
+                  min = 0, max = 100, step = 5
                 )
               })
             )
-          }
-        )
+          )
+        })
       )
-    )
+    })
 
-    # ---- YOUR MAP OUTPUT SECTION ----
+    # Render maps
     output$maps <- renderUI({
       validate(need(!is.null(data()), "No valid data available."))
       req(values$risks, shape())
-      nms <- c(names(data()$groupings), "Total") # 4 names expected
 
-      # Build 4 cells
+      nms <- c(names(values$groupings), "Total")
       cells <- lapply(nms, function(name) {
         div(
           class = "map-cell",
@@ -318,26 +330,39 @@ server <- function(input, output) {
         )
       })
 
-      # Wrap in CSS grid
       div(class = "map-grid", cells)
     })
-  }) # <-- CLOSE observe() PROPERLY
+  })
 
-  # ------------------------ DOWNLOAD HANDLERS ------------------------
-
+  # File downloads
   output$download_data <- downloadHandler(
     filename = "risk_scores.csv",
-    content = \(file) {
-      write.csv(values$risks, file, row.names = FALSE, na = "NA")
-    }
+    content = \(file) write.csv(values$risks, file, row.names = FALSE, na = "NA")
   )
 
   output$download_weightings <- downloadHandler(
     filename = "weightings.csv",
-    content = \(file) {
-      write.csv(values$weightings_table, file, row.names = FALSE, na = "NA")
+    content = \(file) write.csv(values$weightings_table, file, row.names = FALSE, na = "NA")
+  )
+
+  output$download_updated_file <- downloadHandler(
+    filename = function() paste0("WHO Seasonal Risk Assessment Tool_", Sys.Date(), ".xlsx"),
+    content = function(file) {
+      req(input$upload_data$datapath, weights$pillar, weights$indicator)
+
+      wb <- openxlsx::loadWorkbook(input$upload_data$datapath)
+
+      if ("Pillar Weights" %in% names(wb)) {
+        openxlsx::writeData(wb, sheet = "Pillar Weights", x = weights$pillar, startRow = 1, startCol = 1, colNames = TRUE, withFilter = TRUE)
+      }
+
+      if ("Indicator Weights" %in% names(wb)) {
+        openxlsx::writeData(wb, sheet = "Indicator Weights", x = weights$indicator, startRow = 1, startCol = 1, colNames = TRUE, withFilter = TRUE)
+      }
+
+      openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
-} # <-- CLOSE server FUNCTION PROPERLY
+}
 
 shinyApp(ui = ui, server = server)
