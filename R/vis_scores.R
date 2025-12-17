@@ -34,22 +34,44 @@ vis_scores <- function(
     place_label <- NULL
   }
 
+  # Define the fixed palette
+  # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/colors
+  risk_palette <- c(
+    "#0f2d5b",
+    "#53abd0",
+    "#d6dae5",
+    "#d9777d",
+    "#a00016"
+  )
+
   risks %>%
     right_join(shape, by = names(risks)[1]) %>%
     ggplot() +
     geom_sf(
       aes(geometry = geometry, fill = !!sym(value)),
-      color = "black"
+      colour = "white",
+      linewidth = 0.15
     ) +
-    scale_fill_viridis_c(direction = -1, limits = c(1, 5)) +
+    scale_fill_gradientn(
+      colours = risk_palette,
+      limits = c(1, 5),
+      oob = scales::squish,
+      na.value = "#cccccc",
+      space = "Lab"
+    ) +
     coord_sf() +
     place_label +
-    labs(x = NULL, y = NULL, fill = value_label, title = title) +
+    labs(
+      x = NULL,
+      y = NULL,
+      fill = value_label,
+      title = title
+    ) +
     theme(
       axis.text = element_blank(),
       axis.ticks = element_blank(),
       panel.background = element_rect(fill = "white"),
-      legend.position = 'bottom',
+      legend.position = "bottom",
       legend.title = element_text(vjust = 0.7),
       legend.title.align = 0.5
     )

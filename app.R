@@ -24,26 +24,52 @@ helper_files <- file.path(
 )
 invisible(lapply(helper_files[file.exists(helper_files)], source))
 
+# --- UI ---------------------------------------------------------------
 ui <- page_sidebar(
   title = "WHO Seasonal Risk Assessment Tool",
   theme = bs_theme(bootswatch = "litera"),
   fillable = TRUE,
+  ## --- Sidebar ---
   sidebar = sidebar(
     width = 360,
     position = "left",
     open = "open",
     collapsible = TRUE,
     tabsetPanel(
+      ### --- Upload/Download ---
       tabPanel(
         title = "Upload/Download",
-        fileInput("upload_data", "Upload Risk Scores", accept = ".xlsx"),
-        h3("Download "),
-        downloadButton("download_updated_file", "Download Updated Workbook")
+        h5("Upload Risk Scores File"),
+        p(
+          class = "text-muted small mb-3",
+          style = "font-family: inherit;",
+          "Upload the completed ",
+          strong("WHO Seasonal Risk Assessment Tool workbook"),
+          " containing risk scores by indicator. ",
+          "This file will be used to update calculations across the app."
+        ),
+        fileInput(
+          "upload_data",
+          label = NULL,
+          buttonLabel = "Upload Workbook",
+          accept = c(".xlsx", ".xls")
+        ),
+        h5("Download Updated File"),
+        p(
+          class = "text-muted small mb-3",
+          style = "font-family: inherit;",
+          "Download the ",
+          strong("WHO Seasonal Risk Assessment Tool workbook"),
+          " with updated weights and recalculated risk scores applied.",
+        ),
+        downloadButton("download_updated_file", "Download Workbook")
       ),
+      ### --- Pillar Weights ---
       tabPanel(
         title = "Select Pillar Weights",
         uiOutput("pillar_weights")
       ),
+      ### --- Indicator Weights ---
       tabPanel(
         title = "Select Indicator Weights",
         uiOutput("indicator_weights")
@@ -51,6 +77,7 @@ ui <- page_sidebar(
     )
   ),
 
+  # TODO: move elsewhere
   tags$style(HTML(
     "
     .map-grid {
@@ -65,6 +92,7 @@ ui <- page_sidebar(
     "
   )),
 
+  ## --- Tables ---
   fluidRow(
     column(
       width = 12,
@@ -80,6 +108,7 @@ ui <- page_sidebar(
     )
   ),
 
+  ## --- Maps ---
   fluidRow(
     column(
       width = 12,
@@ -88,8 +117,8 @@ ui <- page_sidebar(
   )
 )
 
+# --- Server -----------------------------------------------------------
 server <- function(input, output) {
-
   # Read uploaded data
   data <- reactive({
     req(input$upload_data)
@@ -134,7 +163,11 @@ server <- function(input, output) {
       function(i) {
         p <- weights$pillar$Pillar[i]
         input_val <- input[[paste0("pillar_", p)]]
-        if (is.null(input_val)) weights$pillar$`Pillar Weight`[i] else input_val / 100
+        if (is.null(input_val)) {
+          weights$pillar$`Pillar Weight`[i]
+        } else {
+          input_val / 100
+        }
       },
       numeric(1)
     )
@@ -154,7 +187,11 @@ server <- function(input, output) {
           function(i) {
             id <- paste0("indicator_", df$Pillar[i], "_", i)
             input_val <- input[[id]]
-            if (is.null(input_val)) df$`Indicator Weight`[i] else input_val / 100
+            if (is.null(input_val)) {
+              df$`Indicator Weight`[i]
+            } else {
+              input_val / 100
+            }
           },
           numeric(1)
         )
@@ -175,7 +212,7 @@ server <- function(input, output) {
       \(x) {
         tibble(
           pillar = names(values$groupings)[x],
-          metric  = names(values$groupings[[x]]),
+          metric = names(values$groupings[[x]]),
           pillar_weight = values$weightings[x],
           metric_weight = values$groupings[[x]],
           total_weight = values$weightings[x] * values$groupings[[x]]
@@ -198,13 +235,15 @@ server <- function(input, output) {
       input$upload_data$datapath,
       sheet = "Pillar Weights",
       range = "A1:B4"
-    ) |> as.data.frame()
+    ) |>
+      as.data.frame()
 
     weights$indicator <- readxl::read_excel(
       input$upload_data$datapath,
       sheet = "Indicator Weights",
       range = "A9:F24"
-    ) |> as.data.frame()
+    ) |>
+      as.data.frame()
   })
 
   # Main observer for table rendering
@@ -213,9 +252,9 @@ server <- function(input, output) {
 
     if (
       is.null(data()$scores) ||
-      ncol(data()$scores) == 0 ||
-      is.null(data()$groupings) ||
-      length(data()$groupings) == 0
+        ncol(data()$scores) == 0 ||
+        is.null(data()$groupings) ||
+        length(data()$groupings) == 0
     ) {
       showNotification(
         "Uploaded file doesn’t match the expected template (missing scores/groupings).",
@@ -229,7 +268,7 @@ server <- function(input, output) {
     output$table_overall <- DT::renderDT(
       vis_risk_table(values$risks, values$weightings),
       rownames = FALSE,
-      options = list(order = FALSE, pageLength = 15, searching = FALSE)
+      options = list(order = FALSE, pageLength = 10, searching = FALSE)
     )
 
     output$table_exposure <- DT::renderDT({
@@ -267,7 +306,9 @@ server <- function(input, output) {
       options = list(
         order = if (!is.null(values$risks)) {
           list(match("Total", names(values$risks)) - 1, "desc")
-        } else list(0, "desc"),
+        } else {
+          list(0, "desc")
+        },
         pageLength = 15,
         searching = FALSE
       )
@@ -288,7 +329,9 @@ server <- function(input, output) {
             inputId = paste0("pillar_", pillar_name),
             label = paste0(pillar_name, " (%)"),
             value = round(pillar_weight * 100, 2),
-            min = 0, max = 100, step = 5
+            min = 0,
+            max = 100,
+            step = 5
           )
         })
       )
@@ -308,7 +351,9 @@ server <- function(input, output) {
                   inputId = paste0("indicator_", pillar, "_", i),
                   label = paste0(df$Indicator[i], " (%)"),
                   value = round(df$`Indicator Weight`[i] * 100, 2),
-                  min = 0, max = 100, step = 5
+                  min = 0,
+                  max = 100,
+                  step = 5
                 )
               })
             )
@@ -322,11 +367,23 @@ server <- function(input, output) {
       validate(need(!is.null(data()), "No valid data available."))
       req(values$risks, shape())
 
-      nms <- c(names(values$groupings), "Total")
+      map_order <- c("Exposure", "Vulnerability", "LOCC")
+
+      nms <- c(
+        intersect(map_order, names(values$groupings)),
+        "Total"
+      )
       cells <- lapply(nms, function(name) {
         div(
           class = "map-cell",
-          renderPlot(vis_scores(values$risks, shape(), name, title = name))
+          renderPlot(
+            vis_scores(
+              values$risks,
+              shape(),
+              name,
+              title = name
+            )
+          )
         )
       })
 
@@ -337,27 +394,42 @@ server <- function(input, output) {
   # File downloads
   output$download_data <- downloadHandler(
     filename = "risk_scores.csv",
-    content = \(file) write.csv(values$risks, file, row.names = FALSE, na = "NA")
-  )
-
-  output$download_weightings <- downloadHandler(
-    filename = "weightings.csv",
-    content = \(file) write.csv(values$weightings_table, file, row.names = FALSE, na = "NA")
+    content = \(file) {
+      write.csv(values$risks, file, row.names = FALSE, na = "NA")
+    }
   )
 
   output$download_updated_file <- downloadHandler(
-    filename = function() paste0("WHO Seasonal Risk Assessment Tool_", Sys.Date(), ".xlsx"),
+    filename = function() {
+      paste0("WHO Seasonal Risk Assessment Tool_", Sys.Date(), ".xlsx")
+    },
     content = function(file) {
       req(input$upload_data$datapath, weights$pillar, weights$indicator)
 
       wb <- openxlsx::loadWorkbook(input$upload_data$datapath)
 
       if ("Pillar Weights" %in% names(wb)) {
-        openxlsx::writeData(wb, sheet = "Pillar Weights", x = weights$pillar, startRow = 1, startCol = 1, colNames = TRUE, withFilter = TRUE)
+        openxlsx::writeData(
+          wb,
+          sheet = "Pillar Weights",
+          x = weights$pillar,
+          startRow = 1,
+          startCol = 1,
+          colNames = TRUE,
+          withFilter = TRUE
+        )
       }
 
       if ("Indicator Weights" %in% names(wb)) {
-        openxlsx::writeData(wb, sheet = "Indicator Weights", x = weights$indicator, startRow = 1, startCol = 1, colNames = TRUE, withFilter = TRUE)
+        openxlsx::writeData(
+          wb,
+          sheet = "Indicator Weights",
+          x = weights$indicator,
+          startRow = 1,
+          startCol = 1,
+          colNames = TRUE,
+          withFilter = TRUE
+        )
       }
 
       openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
