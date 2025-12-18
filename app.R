@@ -67,12 +67,14 @@ ui <- page_sidebar(
       ### --- Pillar Weights ---
       tabPanel(
         title = "Select Pillar Weights",
-        uiOutput("pillar_weights")
+        uiOutput("pillar_weights"),
+        uiOutput("pillar_validation_msg")
       ),
       ### --- Indicator Weights ---
       tabPanel(
         title = "Select Indicator Weights",
-        uiOutput("indicator_weights")
+        uiOutput("indicator_weights"),
+        uiOutput("indicator_validation_msg")
       )
     )
   ),
@@ -251,11 +253,61 @@ server <- function(input, output) {
       range = "A9:F24"
     ) |>
       as.data.frame()
+
+    # ---- VALIDATION ----
+    pillar_check <- validate_pillar_weights(weights$pillar)
+    indicator_check <- validate_indicator_weights(weights$indicator)
+
+    if (!pillar_check$valid || any(!indicator_check$valid)) {
+      msg <- c()
+
+      if (!pillar_check$valid) {
+        msg <- c(
+          msg,
+          sprintf(
+            "Pillar weights sum to %.1f%% (off by %+0.1f%%).",
+            pillar_check$total * 100,
+            pillar_check$off_by * 100
+          )
+        )
+      }
+
+      bad_indicators <- indicator_check |> filter(!valid)
+
+      if (nrow(bad_indicators) > 0) {
+        msg <- c(
+          msg,
+          paste0(
+            "Indicator weights do not sum to 100% for\n",
+            paste(
+              sprintf(
+                "%s: %.1f%% (off by %+0.1f%%)",
+                bad_indicators$Pillar,
+                bad_indicators$total * 100,
+                bad_indicators$off_by * 100
+              ),
+              collapse = "\n"
+            )
+          )
+        )
+      }
+
+      showNotification(
+        paste(msg, collapse = "\n"),
+        type = "error",
+        duration = NULL
+      )
+
+      # HARD STOP
+      values$risks <- NULL
+      return()
+    }
   })
 
   # Main observer for table rendering
   observe({
     req(!is.null(data()))
+    req(weights_valid())
 
     if (
       is.null(data()$scores) ||
@@ -346,54 +398,81 @@ server <- function(input, output) {
 
     output$indicator_weights <- renderUI({
       req(weights$indicator)
-      do.call(
-        tabsetPanel,
-        lapply(unique(weights$indicator$Pillar), function(pillar) {
-          df <- weights$indicator |> filter(Pillar == pillar)
-          tabPanel(
-            title = pillar,
-            tagList(
-              lapply(seq_len(nrow(df)), function(i) {
-                numericInput(
-                  inputId = paste0("indicator_", pillar, "_", i),
-                  label = paste0(df$Indicator[i], " (%)"),
-                  value = round(df$`Indicator Weight`[i] * 100, 2),
-                  min = 0,
-                  max = 100,
-                  step = 5
-                )
-              })
-            )
-          )
-        })
-      )
-    })
 
-    # Render maps
-    output$maps <- renderUI({
-      validate(need(!is.null(data()), "No valid data available."))
-      req(values$risks, shape())
+      tabs <- lapply(unique(weights$indicator$Pillar), function(pillar) {
+        df <- weights$indicator |> filter(Pillar == pillar)
 
-      map_order <- c("Exposure", "Vulnerability", "LOCC")
-
-      nms <- c(
-        intersect(map_order, names(values$groupings)),
-        "Total"
-      )
-      cells <- lapply(nms, function(name) {
-        div(
-          class = "map-cell",
-          renderPlot(
-            vis_scores(
-              map_sf = map_sf(),
-              value = name,
-              title = name
-            )
+        tabPanel(
+          title = pillar,
+          tagList(
+            lapply(seq_len(nrow(df)), function(i) {
+              numericInput(
+                inputId = paste0("indicator_", pillar, "_", i),
+                label = paste0(df$Indicator[i], " (%)"),
+                value = round(df$`Indicator Weight`[i] * 100, 2),
+                min = 0,
+                max = 100,
+                step = 5
+              )
+            })
           )
         )
       })
 
-      div(class = "map-grid", cells)
+      do.call(
+        tabsetPanel,
+        c(list(id = "indicator_tab"), tabs)
+      )
+    })
+
+    # Render maps
+
+    output$maps <- renderUI({
+      req(weights_valid())
+
+      if (!weights_valid()) {
+        div(
+          class = "text-danger",
+          "Maps are disabled until all weights sum to 100%."
+        )
+      } else {
+        # existing map rendering
+      }
+    })
+
+    output$maps <- renderUI({
+      req(weights_valid())
+
+      if (!weights_valid()) {
+        div(
+          class = "text-danger",
+          "Maps are disabled until all weights sum to 100%."
+        )
+      } else {
+        validate(need(!is.null(data()), "No valid data available."))
+        req(values$risks, shape())
+
+        map_order <- c("Exposure", "Vulnerability", "LOCC")
+
+        nms <- c(
+          intersect(map_order, names(values$groupings)),
+          "Total"
+        )
+        cells <- lapply(nms, function(name) {
+          div(
+            class = "map-cell",
+            renderPlot(
+              vis_scores(
+                map_sf = map_sf(),
+                value = name,
+                title = name
+              )
+            )
+          )
+        })
+
+        div(class = "map-grid", cells)
+      }
     })
   })
 
@@ -437,6 +516,69 @@ server <- function(input, output) {
     df
   })
 
+  pillar_validation <- reactive({
+    req(pillar_weights_updated())
+    validate_pillar_weights(pillar_weights_updated())
+  })
+
+  output$pillar_validation_msg <- renderUI({
+    v <- pillar_validation()
+
+    if (v$valid) {
+      div(class = "text-success small", "✓ Pillar weights sum to 100%")
+    } else {
+      div(
+        class = "text-danger small",
+        sprintf(
+          "Pillar weights sum to %.1f%% (off by %+0.1f%%)",
+          v$total * 100,
+          v$off_by * 100
+        )
+      )
+    }
+  })
+
+  indicator_validation <- reactive({
+    req(indicator_weights_updated())
+    validate_indicator_weights(indicator_weights_updated())
+  })
+
+  output$indicator_validation_msg <- renderUI({
+    req(input$indicator_tab)
+
+    v <- indicator_validation()
+
+    row <- v |> filter(Pillar == input$indicator_tab)
+
+    if (nrow(row) == 0) {
+      return(NULL)
+    }
+
+    if (row$valid) {
+      div(
+        class = "text-success small",
+        sprintf("✓ %s indicators sum to 100%%", row$Pillar)
+      )
+    } else {
+      div(
+        class = "text-danger small",
+        sprintf(
+          "%s indicators sum to %.1f%% (off by %+0.1f%%)",
+          row$Pillar,
+          row$total * 100,
+          row$off_by * 100
+        )
+      )
+    }
+  })
+
+  weights_valid <- reactive({
+    pv <- pillar_validation()
+    iv <- indicator_validation()
+
+    pv$valid && all(iv$valid)
+  })
+
   # File downloads
   output$download_updated_file <- downloadHandler(
     filename = function() {
@@ -446,7 +588,8 @@ server <- function(input, output) {
       req(
         input$upload_data$datapath,
         pillar_weights_updated(),
-        indicator_weights_updated()
+        indicator_weights_updated(),
+        weights_valid()
       )
 
       wb <- openxlsx::loadWorkbook(input$upload_data$datapath)
