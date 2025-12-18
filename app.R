@@ -82,7 +82,7 @@ ui <- page_sidebar(
     "
     .map-grid {
       display: grid;
-      grid-template-columns: 20% 20% 20% 40%;
+      grid-template-columns: 1fr 1fr 1fr 2fr;
       gap: 20px;
       align-items: start;
     }
@@ -225,6 +225,13 @@ server <- function(input, output) {
       scores = data()$scores,
       weightings = values$weightings
     )
+  })
+
+  map_sf <- reactive({
+    req(values$risks, shape())
+
+    shape() %>%
+      left_join(values$risks, by = "Adm1")
   })
 
   # Load weight tables from uploaded workbook
@@ -378,9 +385,8 @@ server <- function(input, output) {
           class = "map-cell",
           renderPlot(
             vis_scores(
-              values$risks,
-              shape(),
-              name,
+              map_sf = map_sf(),
+              value = name,
               title = name
             )
           )

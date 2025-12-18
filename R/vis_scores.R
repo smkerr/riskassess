@@ -5,37 +5,17 @@
 #' @author Finlay Campbell
 #'
 vis_scores <- function(
-  risks,
-  shape,
+  map_sf,
   value,
-  value_label = "Score",
-  label_place = FALSE,
-  title = NULL
+  value_label = "Risk Score",
+  title = NULL,
+  region = "HQ",
+  data_source = "World Health Organization",
+  date = Sys.Date()
 ) {
-  if (is.null(risks) | is.null(shape) | is.na(value)) {
-    return(NULL)
-  }
+  stopifnot(inherits(map_sf, "sf"))
+  stopifnot(value %in% names(map_sf))
 
-  if (label_place) {
-    place_label <- geom_text(
-      data = unnest_wider(
-        mutate(
-          shape,
-          centroid = map_dfr(
-            geometry,
-            ~ as.data.frame(st_coordinates(st_centroid(.x)))
-          )
-        ),
-        col = "centroid"
-      ),
-      mapping = aes(X, Y, label = !!sym(names(risks)[1]))
-    )
-  } else {
-    place_label <- NULL
-  }
-
-  # Define the fixed palette
-  # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/colors
   risk_palette <- c(
     "#0f2d5b",
     "#53abd0",
@@ -44,35 +24,45 @@ vis_scores <- function(
     "#a00016"
   )
 
-  risks %>%
-    right_join(shape, by = names(risks)[1]) %>%
-    ggplot() +
-    geom_sf(
-      aes(geometry = geometry, fill = !!sym(value)),
-      colour = "white",
-      linewidth = 0.15
-    ) +
+  disclaimer_labs <- whomapper::who_map_annotate(
+    region = region,
+    data_source = data_source
+  )[[1]]
+
+  who_map_text_theme <- theme(
+    plot.title = element_text(
+      color = who_map_col("title"),
+      size = 16,
+      face = "bold",
+      hjust = 0
+    ),
+    plot.subtitle = element_text(
+      color = who_map_col("title"),
+      size = 13,
+      hjust = 0
+    ),
+    plot.caption = element_text(
+      hjust = 0,
+      size = 6,
+      lineheight = 1.1
+    ),
+    legend.position = "bottom"
+  )
+
+  ggplot(map_sf) +
+    geom_sf_who_poly(aes(fill = !!sym(value))) +
     scale_fill_gradientn(
       colours = risk_palette,
       limits = c(1, 5),
       oob = scales::squish,
-      na.value = "#cccccc",
-      space = "Lab"
+      na.value = who_map_col("no_data"),
+      name = value_label
     ) +
-    coord_sf() +
-    place_label +
     labs(
-      x = NULL,
-      y = NULL,
-      fill = value_label,
-      title = title
+      title = title,
+      subtitle = paste("As of", format(as.Date(date), "%d %b %Y"))
     ) +
-    theme(
-      axis.text = element_blank(),
-      axis.ticks = element_blank(),
-      panel.background = element_rect(fill = "white"),
-      legend.position = "bottom",
-      legend.title = element_text(vjust = 0.7),
-      legend.title.align = 0.5
-    )
+    disclaimer_labs +
+    theme_void() +
+    who_map_text_theme
 }
