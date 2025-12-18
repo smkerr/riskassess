@@ -397,20 +397,57 @@ server <- function(input, output) {
     })
   })
 
-  # File downloads
-  output$download_data <- downloadHandler(
-    filename = "risk_scores.csv",
-    content = \(file) {
-      write.csv(values$risks, file, row.names = FALSE, na = "NA")
-    }
-  )
+  # Update weights
+  pillar_weights_updated <- reactive({
+    req(weights$pillar)
 
+    df <- weights$pillar
+
+    df$`Pillar Weight` <- vapply(
+      seq_len(nrow(df)),
+      function(i) {
+        p <- df$Pillar[i]
+        input_val <- input[[paste0("pillar_", p)]]
+        if (is.null(input_val)) df$`Pillar Weight`[i] else input_val / 100
+      },
+      numeric(1)
+    )
+
+    df
+  })
+
+  indicator_weights_updated <- reactive({
+    req(weights$indicator)
+
+    df <- weights$indicator
+
+    # row index within each pillar (matches how UI creates inputs)
+    row_in_pillar <- ave(seq_len(nrow(df)), df$Pillar, FUN = seq_along)
+
+    df$`Indicator Weight` <- vapply(
+      seq_len(nrow(df)),
+      function(i) {
+        id <- paste0("indicator_", df$Pillar[i], "_", row_in_pillar[i])
+        input_val <- input[[id]]
+        if (is.null(input_val)) df$`Indicator Weight`[i] else input_val / 100
+      },
+      numeric(1)
+    )
+
+    df
+  })
+
+  # File downloads
   output$download_updated_file <- downloadHandler(
     filename = function() {
-      paste0("WHO Seasonal Risk Assessment Tool_", Sys.Date(), ".xlsx")
+      paste0("WHO_Seasonal_Risk_Assessment_Tool_", Sys.Date(), ".xlsx")
     },
     content = function(file) {
-      req(input$upload_data$datapath, weights$pillar, weights$indicator)
+      req(
+        input$upload_data$datapath,
+        pillar_weights_updated(),
+        indicator_weights_updated()
+      )
 
       wb <- openxlsx::loadWorkbook(input$upload_data$datapath)
 
@@ -418,11 +455,11 @@ server <- function(input, output) {
         openxlsx::writeData(
           wb,
           sheet = "Pillar Weights",
-          x = weights$pillar,
-          startRow = 1,
+          x = pillar_weights_updated(),
+          startRow = 2,
           startCol = 1,
-          colNames = TRUE,
-          withFilter = TRUE
+          colNames = FALSE #,
+          # withFilter = TRUE
         )
       }
 
@@ -430,11 +467,11 @@ server <- function(input, output) {
         openxlsx::writeData(
           wb,
           sheet = "Indicator Weights",
-          x = weights$indicator,
-          startRow = 1,
-          startCol = 1,
-          colNames = TRUE,
-          withFilter = TRUE
+          x = indicator_weights_updated()$`Indicator Weight`,
+          startRow = 10,
+          startCol = 5,
+          colNames = FALSE #,
+          # withFilter = TRUE
         )
       }
 
