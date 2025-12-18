@@ -60,7 +60,7 @@ ui <- page_sidebar(
           style = "font-family: inherit;",
           "Download the ",
           strong("WHO Seasonal Risk Assessment Tool workbook"),
-          " with updated weights and recalculated risk scores applied.",
+          " with updated weights and recalculated risk scores applied."
         ),
         downloadButton("download_updated_file", "Download Workbook")
       ),
@@ -324,13 +324,24 @@ server <- function(input, output) {
       return()
     }
 
-    output$table_overall <- DT::renderDT(
-      vis_risk_table(values$risks, values$weightings),
-      rownames = FALSE,
-      options = list(order = FALSE, pageLength = 10, searching = FALSE)
-    )
+    output$table_overall <- DT::renderDT({
+      validate(
+        need(
+          weights_valid(),
+          "Tables are disabled until all weights sum to 100%."
+        )
+      )
+      vis_risk_table(values$risks, values$weightings)
+    })
 
     output$table_exposure <- DT::renderDT({
+      validate(
+        need(
+          weights_valid(),
+          "Tables are disabled until all weights sum to 100%."
+        )
+      )
+
       df <- make_indicator_table(
         scores = data()$scores,
         risks = values$risks,
@@ -341,6 +352,13 @@ server <- function(input, output) {
     })
 
     output$table_vulnerability <- DT::renderDT({
+      validate(
+        need(
+          weights_valid(),
+          "Tables are disabled until all weights sum to 100%."
+        )
+      )
+
       df <- make_indicator_table(
         scores = data()$scores,
         risks = values$risks,
@@ -351,6 +369,13 @@ server <- function(input, output) {
     })
 
     output$table_lcc <- DT::renderDT({
+      validate(
+        need(
+          weights_valid(),
+          "Tables are disabled until all weights sum to 100%."
+        )
+      )
+
       df <- make_indicator_table(
         scores = data()$scores,
         risks = values$risks,
@@ -359,9 +384,18 @@ server <- function(input, output) {
       )
       vis_risk_table(df, values$groupings[["LOCC"]])
     })
-
+    
     output$tables <- DT::renderDT(
-      vis_overall_table(values$risks, values$weightings),
+      {
+        validate(
+          need(
+            weights_valid(),
+            "Tables are disabled until all weights sum to 100%."
+          )
+        )
+        
+        vis_overall_table(values$risks, values$weightings)
+      },
       options = list(
         order = if (!is.null(values$risks)) {
           list(match("Total", names(values$risks)) - 1, "desc")
@@ -373,7 +407,7 @@ server <- function(input, output) {
       )
     )
   })
-
+    
   # UI for editing pillar and indicator weights
   observe({
     req(!is.null(data()))
@@ -426,20 +460,6 @@ server <- function(input, output) {
     })
 
     # Render maps
-
-    output$maps <- renderUI({
-      req(weights_valid())
-
-      if (!weights_valid()) {
-        div(
-          class = "text-danger",
-          "Maps are disabled until all weights sum to 100%."
-        )
-      } else {
-        # existing map rendering
-      }
-    })
-
     output$maps <- renderUI({
       req(weights_valid())
 
@@ -621,6 +641,6 @@ server <- function(input, output) {
       openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
-}
+  }
 
 shinyApp(ui = ui, server = server)
