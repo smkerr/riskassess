@@ -26,8 +26,44 @@ invisible(lapply(helper_files[file.exists(helper_files)], source))
 
 # --- UI ---------------------------------------------------------------
 ui <- page_sidebar(
-  title = "WHO Seasonal Risk Assessment Tool",
-  theme = bs_theme(bootswatch = "litera"),
+  # title = "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+  title = div(
+    class = "app-title d-flex align-items-center gap-2",
+    tags$img(
+      src = "who-logo.png",
+      height = "36px",
+      alt = "World Health Organization"
+    ),
+    span(
+      "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+      style = "font-weight: 700;"
+    )
+  ),
+  theme = bs_theme(
+    bootswatch = "yeti", # spacelab
+
+    # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/typography/
+    base_font = font_google("Noto Sans"),
+    # Core text colors
+    fg = "#000000", # body text
+    bg = "#FFFFFF",
+
+    # Headings
+    heading_color = "#009CDE", # WHO blue
+
+    # Muted / secondary text
+    secondary = "#595959", # gray
+    # Links & interactive text
+    link_color = "#009CDE", # WHO primary blue
+
+    # Status colors
+    danger = "#9a3709",
+    warning = "#754d06",
+    success = "#1d6339",
+    info = "#245993",
+
+    weights = c(400, 600, 700)
+  ),
   fillable = TRUE,
   ## --- Sidebar ---
   sidebar = sidebar(
@@ -39,6 +75,7 @@ ui <- page_sidebar(
       ### --- Upload/Download ---
       tabPanel(
         title = "Upload/Download",
+        br(),
         h5("Upload Risk Scores File"),
         p(
           class = "text-muted small mb-3",
@@ -62,7 +99,8 @@ ui <- page_sidebar(
           strong("WHO Seasonal Risk Assessment Tool workbook"),
           " with updated weights and recalculated risk scores applied."
         ),
-        downloadButton("download_updated_file", "Download Workbook")
+        # downloadButton("download_updated_file", "Download Workbook")
+        uiOutput("download_button")
       ),
       ### --- Pillar Weights ---
       tabPanel(
@@ -82,6 +120,10 @@ ui <- page_sidebar(
   # TODO: move elsewhere
   tags$style(HTML(
     "
+  .bslib-page-title h1 {
+    color: white !important;
+    font-weight: 600;
+  }
     .map-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr 2fr;
@@ -105,7 +147,7 @@ ui <- page_sidebar(
         tabPanel("Overall Risk Score", br(), dataTableOutput("table_overall")),
         tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
         tabPanel("Vulnerability", br(), dataTableOutput("table_vulnerability")),
-        tabPanel("LOCC", br(), dataTableOutput("table_lcc"))
+        tabPanel("LOCC", br(), dataTableOutput("table_locc"))
       )
     )
   ),
@@ -121,6 +163,25 @@ ui <- page_sidebar(
 
 # --- Server -----------------------------------------------------------
 server <- function(input, output) {
+  empty_state_msg <- function(text) {
+    div(
+      style = "
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 300px;
+      text-align: center;
+      color: #6c757d;
+      font-size: 1.1rem;
+    ",
+      div(
+        strong("No data uploaded yet"),
+        br(),
+        text
+      )
+    )
+  }
+
   # Read uploaded data
   data <- reactive({
     req(input$upload_data)
@@ -304,10 +365,100 @@ server <- function(input, output) {
     }
   })
 
+  output$table_overall <- DT::renderDT({
+    validate(
+      need(
+        input$upload_data,
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
+      )
+    )
+
+    validate(
+      need(
+        weights_valid(),
+        "Tables are disabled until all weights sum to 100%."
+      )
+    )
+
+    vis_risk_table(values$risks, values$weightings)
+  })
+
+  output$table_exposure <- DT::renderDT({
+    validate(
+      need(
+        input$upload_data,
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+      )
+    )
+
+    validate(
+      need(
+        weights_valid(),
+        "Tables are disabled until all weights sum to 100%."
+      )
+    )
+
+    df <- make_indicator_table(
+      scores = data()$scores,
+      risks = values$risks,
+      groupings = values$groupings,
+      pillar_name = "Exposure"
+    )
+    vis_risk_table(df, values$groupings[["Exposure"]])
+  })
+
+  output$table_vulnerability <- DT::renderDT({
+    validate(
+      need(
+        input$upload_data,
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+      )
+    )
+
+    validate(
+      need(
+        weights_valid(),
+        "Tables are disabled until all weights sum to 100%."
+      )
+    )
+
+    df <- make_indicator_table(
+      scores = data()$scores,
+      risks = values$risks,
+      groupings = values$groupings,
+      pillar_name = "Vulnerability"
+    )
+    vis_risk_table(df, values$groupings[["Vulnerability"]])
+  })
+
+  output$table_locc <- DT::renderDT({
+    validate(
+      need(
+        input$upload_data,
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+      )
+    )
+
+    validate(
+      need(
+        weights_valid(),
+        "Tables are disabled until all weights sum to 100%."
+      )
+    )
+
+    df <- make_indicator_table(
+      scores = data()$scores,
+      risks = values$risks,
+      groupings = values$groupings,
+      pillar_name = "LOCC"
+    )
+    vis_risk_table(df, values$groupings[["LOCC"]])
+  })
+
   # Main observer for table rendering
   observe({
-    req(!is.null(data()))
-    req(weights_valid())
+    # req(!is.null(data()))
+    # req(weights_valid())
 
     if (
       is.null(data()$scores) ||
@@ -324,67 +475,6 @@ server <- function(input, output) {
       return()
     }
 
-    output$table_overall <- DT::renderDT({
-      validate(
-        need(
-          weights_valid(),
-          "Tables are disabled until all weights sum to 100%."
-        )
-      )
-      vis_risk_table(values$risks, values$weightings)
-    })
-
-    output$table_exposure <- DT::renderDT({
-      validate(
-        need(
-          weights_valid(),
-          "Tables are disabled until all weights sum to 100%."
-        )
-      )
-
-      df <- make_indicator_table(
-        scores = data()$scores,
-        risks = values$risks,
-        groupings = values$groupings,
-        pillar_name = "Exposure"
-      )
-      vis_risk_table(df, values$groupings[["Exposure"]])
-    })
-
-    output$table_vulnerability <- DT::renderDT({
-      validate(
-        need(
-          weights_valid(),
-          "Tables are disabled until all weights sum to 100%."
-        )
-      )
-
-      df <- make_indicator_table(
-        scores = data()$scores,
-        risks = values$risks,
-        groupings = values$groupings,
-        pillar_name = "Vulnerability"
-      )
-      vis_risk_table(df, values$groupings[["Vulnerability"]])
-    })
-
-    output$table_lcc <- DT::renderDT({
-      validate(
-        need(
-          weights_valid(),
-          "Tables are disabled until all weights sum to 100%."
-        )
-      )
-
-      df <- make_indicator_table(
-        scores = data()$scores,
-        risks = values$risks,
-        groupings = values$groupings,
-        pillar_name = "LOCC"
-      )
-      vis_risk_table(df, values$groupings[["LOCC"]])
-    })
-    
     output$tables <- DT::renderDT(
       {
         validate(
@@ -393,7 +483,7 @@ server <- function(input, output) {
             "Tables are disabled until all weights sum to 100%."
           )
         )
-        
+
         vis_overall_table(values$risks, values$weightings)
       },
       options = list(
@@ -407,7 +497,7 @@ server <- function(input, output) {
       )
     )
   })
-    
+
   # UI for editing pillar and indicator weights
   observe({
     req(!is.null(data()))
@@ -599,6 +689,25 @@ server <- function(input, output) {
     pv$valid && all(iv$valid)
   })
 
+  output$download_button <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(NULL)
+    }
+
+    if (!weights_valid()) {
+      div(
+        class = "text-warning small",
+        "Weights must sum to 100% before downloading the updated workbook."
+      )
+    } else {
+      downloadButton(
+        "download_updated_file",
+        "Download Workbook",
+        class = "btn-primary"
+      )
+    }
+  })
+
   # File downloads
   output$download_updated_file <- downloadHandler(
     filename = function() {
@@ -641,6 +750,6 @@ server <- function(input, output) {
       openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
-  }
+}
 
 shinyApp(ui = ui, server = server)
