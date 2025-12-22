@@ -10,6 +10,7 @@ library(sf)
 library(scales)
 library(bslib)
 library(whomapper)
+library(zip)
 
 # Load helper functions
 helper_files <- file.path(
@@ -156,7 +157,8 @@ ui <- page_sidebar(
   fluidRow(
     column(
       width = 12,
-      uiOutput("maps")
+      uiOutput("maps"),
+      uiOutput("map_download_buttons")
     )
   )
 )
@@ -379,8 +381,21 @@ server <- function(input, output) {
         "Tables are disabled until all weights sum to 100%."
       )
     )
+    
+    req(values$risks)
 
-    vis_risk_table(values$risks, values$weightings)
+    df <- values$risks %>%
+      dplyr::select(
+        Adm1,
+        Exposure,
+        Vulnerability,
+        LOCC,
+        Total
+      )
+
+    vis_risk_table(df, values$weightings)
+
+    # vis_risk_table(values$risks, values$weightings)
   })
 
   output$table_exposure <- DT::renderDT({
@@ -585,6 +600,64 @@ server <- function(input, output) {
       }
     })
   })
+
+  output$map_download_buttons <- renderUI({
+    req(weights_valid(), values$risks, shape())
+
+    div(
+      class = "d-flex justify-content-start mt-3 mb-4",
+      downloadButton(
+        "download_maps_png",
+        "Download maps",
+        class = "btn-primary"
+      )
+    )
+  })
+
+  output$download_maps_png <- downloadHandler(
+    filename = function() {
+      paste0("WHO_Seasonal_Risk_Assessment_Maps_", Sys.Date(), ".zip")
+    },
+    content = function(file) {
+      tmpdir <- tempdir()
+
+      map_names <- c(
+        intersect(
+          c("Exposure", "Vulnerability", "LOCC"),
+          names(values$groupings)
+        ),
+        "Total"
+      )
+
+      png_files <- character(0)
+
+      for (nm in map_names) {
+        p <- vis_scores(
+          map_sf = map_sf(),
+          value = nm,
+          title = nm
+        )
+
+        outfile <- file.path(
+          tmpdir,
+          paste0("WHO_Seasonal_Risk_Assessment_Maps_", nm, ".png")
+        )
+
+        ggsave(
+          filename = outfile,
+          plot = p,
+          width = 8,
+          height = 6,
+          dpi = 300,
+          bg = "white"
+        )
+
+        png_files <- c(png_files, outfile)
+      }
+
+      zip::zipr(file, png_files)
+    }
+  )
 
   # Update weights
   pillar_weights_updated <- reactive({
