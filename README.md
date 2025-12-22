@@ -1,10 +1,3 @@
-Shiny Tool for Risk Assessment Calibration
+WHO Seasonal Risk Assessment Tool
 ================
 
-## Installing the package
-
-Install the up-to-date version of this package using
-`remotes::install_github("finlaycampbell/riskassess")`. 
-
-## Launching the app
-The Shiny app is launched with the command `riskassess::run_riskassess()`.
