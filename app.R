@@ -11,14 +11,26 @@ library(scales)
 library(bslib)
 library(whomapper)
 library(zip)
+library(shinymanager)
+
+credentials <- data.frame(
+  user = "user",
+  password = "SeasonalRisk2025",
+  permissions = "admin",
+  name = "WHO User",
+  stringsAsFactors = FALSE
+)
 
 # Load helper functions
 helper_files <- file.path(
   "R",
   c(
+    "get_risks.R",
+    "make_indicator_table.R",
     "read_data.R",
     "read_shape.R",
-    "get_risks.R",
+    "validate_indicator_weights.R",
+    "validate_pillar_weights.R",
     "vis_risk_table.R",
     "vis_scores.R"
   )
@@ -26,112 +38,113 @@ helper_files <- file.path(
 invisible(lapply(helper_files[file.exists(helper_files)], source))
 
 # --- UI ---------------------------------------------------------------
-ui <- page_sidebar(
-  # title = "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
-  title = div(
-    class = "app-title d-flex align-items-center gap-2",
-    tags$img(
-      src = "who-logo.png",
-      height = "36px",
-      alt = "World Health Organization"
-    ),
-    span(
-      "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
-      style = "font-weight: 700;"
-    )
-  ),
-  theme = bs_theme(
-    bootswatch = "yeti", # spacelab
-
-    # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/typography/
-    base_font = font_google("Noto Sans"),
-    # Core text colors
-    fg = "#000000", # body text
-    bg = "#FFFFFF",
-
-    # Headings
-    heading_color = "#009CDE", # WHO blue
-
-    # Muted / secondary text
-    secondary = "#595959", # gray
-    # Links & interactive text
-    link_color = "#009CDE", # WHO primary blue
-
-    # Status colors
-    danger = "#9a3709",
-    warning = "#754d06",
-    success = "#1d6339",
-    info = "#245993",
-
-    weights = c(400, 600, 700)
-  ),
-  fillable = TRUE,
-  ## --- Sidebar ---
-  sidebar = sidebar(
-    width = 360,
-    position = "left",
-    open = "open",
-    collapsible = TRUE,
-    tabsetPanel(
-      ### --- Instructions ---
-      tabPanel(
-        title = "Instructions",
-        helpText(
-          "Instructions will be added here. Reference to documentation will be included."
-          # "Use this tool to calculate and visualise seasonal risk scores for acute emergencies.",
-          # "To begin, download and complete the WHO Seasonal Risk Assessment Tool workbook.",
-          # "Once completed, upload the workbook using the Upload/Download tab."
-        )
+ui <- shinymanager::secure_app(
+  page_sidebar(
+    # title = "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+    title = div(
+      class = "app-title d-flex align-items-center gap-2",
+      tags$img(
+        src = "who-logo.png",
+        height = "36px",
+        alt = "World Health Organization"
       ),
-
-      ### --- Upload/Download ---
-      tabPanel(
-        title = "Upload/Download",
-        br(),
-        h5("Upload Risk Scores File"),
-        p(
-          class = "text-muted small mb-3",
-          style = "font-family: inherit;",
-          "Upload the completed ",
-          strong("WHO Seasonal Risk Assessment Tool workbook"),
-          " containing risk scores by indicator. ",
-          "This file will be used to update calculations across the app."
-        ),
-        fileInput(
-          "upload_data",
-          label = NULL,
-          buttonLabel = "Upload Workbook",
-          accept = c(".xlsx", ".xls")
-        ),
-        h5("Download Updated File"),
-        p(
-          class = "text-muted small mb-3",
-          style = "font-family: inherit;",
-          "Download the ",
-          strong("WHO Seasonal Risk Assessment Tool workbook"),
-          " with updated weights and recalculated risk scores applied."
-        ),
-        # downloadButton("download_updated_file", "Download Workbook")
-        uiOutput("download_button")
-      ),
-      ### --- Pillar Weights ---
-      tabPanel(
-        title = "Select Pillar Weights",
-        uiOutput("pillar_weights"),
-        uiOutput("pillar_validation_msg")
-      ),
-      ### --- Indicator Weights ---
-      tabPanel(
-        title = "Select Indicator Weights",
-        uiOutput("indicator_weights"),
-        uiOutput("indicator_validation_msg")
+      span(
+        "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+        style = "font-weight: 700;"
       )
-    )
-  ),
+    ),
+    theme = bs_theme(
+      bootswatch = "yeti", # spacelab
 
-  # TODO: move elsewhere
-  tags$style(HTML(
-    "
+      # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/typography/
+      base_font = font_google("Noto Sans"),
+      # Core text colors
+      fg = "#000000", # body text
+      bg = "#FFFFFF",
+
+      # Headings
+      heading_color = "#009CDE", # WHO blue
+
+      # Muted / secondary text
+      secondary = "#595959", # gray
+      # Links & interactive text
+      link_color = "#009CDE", # WHO primary blue
+
+      # Status colors
+      danger = "#9a3709",
+      warning = "#754d06",
+      success = "#1d6339",
+      info = "#245993",
+
+      weights = c(400, 600, 700)
+    ),
+    fillable = TRUE,
+    ## --- Sidebar ---
+    sidebar = sidebar(
+      width = 360,
+      position = "left",
+      open = "open",
+      collapsible = TRUE,
+      tabsetPanel(
+        ### --- Instructions ---
+        tabPanel(
+          title = "Instructions",
+          helpText(
+            "Instructions will be added here. Reference to documentation will be included."
+            # "Use this tool to calculate and visualise seasonal risk scores for acute emergencies.",
+            # "To begin, download and complete the WHO Seasonal Risk Assessment Tool workbook.",
+            # "Once completed, upload the workbook using the Upload/Download tab."
+          )
+        ),
+
+        ### --- Upload/Download ---
+        tabPanel(
+          title = "Upload/Download",
+          br(),
+          h5("Upload Risk Scores File"),
+          p(
+            class = "text-muted small mb-3",
+            style = "font-family: inherit;",
+            "Upload the completed ",
+            strong("WHO Seasonal Risk Assessment Tool workbook"),
+            " containing risk scores by indicator. ",
+            "This file will be used to update calculations across the app."
+          ),
+          fileInput(
+            "upload_data",
+            label = NULL,
+            buttonLabel = "Upload Workbook",
+            accept = c(".xlsx", ".xls")
+          ),
+          h5("Download Updated File"),
+          p(
+            class = "text-muted small mb-3",
+            style = "font-family: inherit;",
+            "Download the ",
+            strong("WHO Seasonal Risk Assessment Tool workbook"),
+            " with updated weights and recalculated risk scores applied."
+          ),
+          # downloadButton("download_updated_file", "Download Workbook")
+          uiOutput("download_button")
+        ),
+        ### --- Pillar Weights ---
+        tabPanel(
+          title = "Select Pillar Weights",
+          uiOutput("pillar_weights"),
+          uiOutput("pillar_validation_msg")
+        ),
+        ### --- Indicator Weights ---
+        tabPanel(
+          title = "Select Indicator Weights",
+          uiOutput("indicator_weights"),
+          uiOutput("indicator_validation_msg")
+        )
+      )
+    ),
+
+    # TODO: move elsewhere
+    tags$style(HTML(
+      "
   .bslib-page-title h1 {
     color: white !important;
     font-weight: 600;
@@ -146,36 +159,109 @@ ui <- page_sidebar(
       padding: 5px;
     }
     "
-  )),
+    )),
 
-  ## --- Tables ---
-  fluidRow(
-    column(
-      width = 12,
-      h3("Risk Scores"),
-      tabsetPanel(
-        id = "score_tabs",
+    ## --- Tables ---
+    fluidRow(
+      column(
+        width = 12,
+        h3("Risk Scores"),
+        tabsetPanel(
+          id = "score_tabs",
 
-        tabPanel("Composite Risk Score", br(), dataTableOutput("table_overall")),
-        tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
-        tabPanel("Vulnerability", br(), dataTableOutput("table_vulnerability")),
-        tabPanel("LOCC", br(), dataTableOutput("table_locc"))
+          tabPanel(
+            "Composite Risk Scores",
+            br(),
+            dataTableOutput("table_overall")
+          ),
+          tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
+          tabPanel(
+            "Vulnerability",
+            br(),
+            dataTableOutput("table_vulnerability")
+          ),
+          tabPanel("LOCC", br(), dataTableOutput("table_locc"))
+        )
+      )
+    ),
+
+    ## --- Maps ---
+    fluidRow(
+      column(
+        width = 12,
+        uiOutput("maps"),
+        uiOutput("map_download_buttons")
       )
     )
   ),
+  head_auth = tags$head(
+    tags$script(HTML(
+      "
+      // Intercept Enter and delay submit
+      $(document).on('keydown', '#auth-user_pwd, #auth-user_id', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
 
-  ## --- Maps ---
-  fluidRow(
-    column(
-      width = 12,
-      uiOutput("maps"),
-      uiOutput("map_download_buttons")
-    )
-  )
+          // hide any previous error immediately
+          $('.shinymanager-authentication .alert').hide();
+
+          $(this).blur();
+          setTimeout(function() {
+            $('#auth-go_auth').click();
+          }, 150);
+
+          return false;
+        }
+      });
+
+      // As soon as authentication UI starts disappearing, hide error
+      const authObserver = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          if (!$('.shinymanager-authentication').is(':visible')) {
+            $('.shinymanager-authentication .alert').hide();
+          }
+        });
+      });
+
+      $(document).ready(function() {
+        const target = document.body;
+        authObserver.observe(target, { childList: true, subtree: true });
+      });
+    "
+    ))
+  ),
+  tags_top = tags$head(
+    tags$style(HTML(
+      "
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap');
+
+    body,
+    .shinymanager-container,
+    .shinymanager-authentication {
+      font-family: 'Noto Sans', sans-serif !important;
+    }
+
+    /* Smooth visual transition after submit */
+    .shinymanager-authentication {
+      transition: opacity 0.4s ease;
+    }
+
+    .shinymanager-authentication.loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+  "
+    ))
+  ),
+  language = "en"
 )
 
 # --- Server -----------------------------------------------------------
 server <- function(input, output) {
+  shinymanager::secure_server(
+    check_credentials = shinymanager::check_credentials(credentials)
+  )
+
   # Read uploaded data
   data <- reactive({
     req(input$upload_data)

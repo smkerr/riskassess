@@ -1,0 +1,7 @@
+README.md
+.DS_Store
+.gitignore
+.Renviron
+archive/
+data/
+rsconnect/

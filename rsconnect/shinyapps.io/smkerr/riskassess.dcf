@@ -1,0 +1,10 @@
+name: riskassess
+title: WHO Seasonal Risk Assessment Tool
+username: smkerr
+account: smkerr
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16347346
+bundleId: 11357977
+url: https://smkerr.shinyapps.io/riskassess/
+version: 1
