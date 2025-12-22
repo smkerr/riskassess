@@ -44,5 +44,9 @@ get_risks <- function(
       }
     )
   ) %>%
-    mutate(Total = apply(select(., -1), 1, \(x) sum(x * weightings)))
+    mutate(
+      `Composite Risk Score` = apply(select(., -1), 1, \(x) {
+        sum(x * weightings)
+      })
+    )
 }

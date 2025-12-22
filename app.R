@@ -73,6 +73,17 @@ ui <- page_sidebar(
     open = "open",
     collapsible = TRUE,
     tabsetPanel(
+      ### --- Instructions ---
+      tabPanel(
+        title = "Instructions",
+        helpText(
+          "Instructions will be added here. Reference to documentation will be included."
+          # "Use this tool to calculate and visualise seasonal risk scores for acute emergencies.",
+          # "To begin, download and complete the WHO Seasonal Risk Assessment Tool workbook.",
+          # "Once completed, upload the workbook using the Upload/Download tab."
+        )
+      ),
+
       ### --- Upload/Download ---
       tabPanel(
         title = "Upload/Download",
@@ -145,7 +156,7 @@ ui <- page_sidebar(
       tabsetPanel(
         id = "score_tabs",
 
-        tabPanel("Overall Risk Score", br(), dataTableOutput("table_overall")),
+        tabPanel("Composite Risk Score", br(), dataTableOutput("table_overall")),
         tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
         tabPanel("Vulnerability", br(), dataTableOutput("table_vulnerability")),
         tabPanel("LOCC", br(), dataTableOutput("table_locc"))
@@ -165,25 +176,6 @@ ui <- page_sidebar(
 
 # --- Server -----------------------------------------------------------
 server <- function(input, output) {
-  empty_state_msg <- function(text) {
-    div(
-      style = "
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 300px;
-      text-align: center;
-      color: #6c757d;
-      font-size: 1.1rem;
-    ",
-      div(
-        strong("No data uploaded yet"),
-        br(),
-        text
-      )
-    )
-  }
-
   # Read uploaded data
   data <- reactive({
     req(input$upload_data)
@@ -381,7 +373,7 @@ server <- function(input, output) {
         "Tables are disabled until all weights sum to 100%."
       )
     )
-    
+
     req(values$risks)
 
     df <- values$risks %>%
@@ -390,19 +382,17 @@ server <- function(input, output) {
         Exposure,
         Vulnerability,
         LOCC,
-        Total
+        `Composite Risk Score`
       )
 
     vis_risk_table(df, values$weightings)
-
-    # vis_risk_table(values$risks, values$weightings)
   })
 
   output$table_exposure <- DT::renderDT({
     validate(
       need(
         input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
       )
     )
 
@@ -426,7 +416,7 @@ server <- function(input, output) {
     validate(
       need(
         input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
       )
     )
 
@@ -450,7 +440,7 @@ server <- function(input, output) {
     validate(
       need(
         input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores."
+        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
       )
     )
 
@@ -503,7 +493,7 @@ server <- function(input, output) {
       },
       options = list(
         order = if (!is.null(values$risks)) {
-          list(match("Total", names(values$risks)) - 1, "desc")
+          list(match("Composite Risk Score", names(values$risks)) - 1, "desc")
         } else {
           list(0, "desc")
         },
@@ -514,55 +504,62 @@ server <- function(input, output) {
   })
 
   # UI for editing pillar and indicator weights
-  observe({
-    req(!is.null(data()))
+  output$pillar_weights <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(helpText("No data uploaded."))
+    }
 
-    output$pillar_weights <- renderUI({
-      req(weights$pillar)
-      tagList(
-        lapply(seq_len(nrow(weights$pillar)), function(i) {
-          pillar_name <- weights$pillar$Pillar[i]
-          pillar_weight <- weights$pillar$`Pillar Weight`[i]
-          numericInput(
-            inputId = paste0("pillar_", pillar_name),
-            label = paste0(pillar_name, " (%)"),
-            value = round(pillar_weight * 100, 2),
-            min = 0,
-            max = 100,
-            step = 5
-          )
-        })
-      )
-    })
+    req(weights$pillar)
 
-    output$indicator_weights <- renderUI({
-      req(weights$indicator)
+    tagList(
+      lapply(seq_len(nrow(weights$pillar)), function(i) {
+        pillar_name <- weights$pillar$Pillar[i]
+        pillar_weight <- weights$pillar$`Pillar Weight`[i]
 
-      tabs <- lapply(unique(weights$indicator$Pillar), function(pillar) {
-        df <- weights$indicator |> filter(Pillar == pillar)
-
-        tabPanel(
-          title = pillar,
-          tagList(
-            lapply(seq_len(nrow(df)), function(i) {
-              numericInput(
-                inputId = paste0("indicator_", pillar, "_", i),
-                label = paste0(df$Indicator[i], " (%)"),
-                value = round(df$`Indicator Weight`[i] * 100, 2),
-                min = 0,
-                max = 100,
-                step = 5
-              )
-            })
-          )
+        numericInput(
+          inputId = paste0("pillar_", pillar_name),
+          label = paste0(pillar_name, " (%)"),
+          value = round(pillar_weight * 100, 2),
+          min = 0,
+          max = 100,
+          step = 5
         )
       })
+    )
+  })
 
-      do.call(
-        tabsetPanel,
-        c(list(id = "indicator_tab"), tabs)
+  output$indicator_weights <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(helpText("No data uploaded."))
+    }
+
+    req(weights$indicator)
+
+    tabs <- lapply(unique(weights$indicator$Pillar), function(pillar) {
+      df <- weights$indicator |> filter(Pillar == pillar)
+
+      tabPanel(
+        title = pillar,
+        tagList(
+          lapply(seq_len(nrow(df)), function(i) {
+            numericInput(
+              inputId = paste0("indicator_", pillar, "_", i),
+              label = paste0(df$Indicator[i], " (%)"),
+              value = round(df$`Indicator Weight`[i] * 100, 2),
+              min = 0,
+              max = 100,
+              step = 5
+            )
+          })
+        )
       )
     })
+
+    do.call(tabsetPanel, c(list(id = "indicator_tab"), tabs))
+  })
+
+  observe({
+    req(!is.null(data()))
 
     # Render maps
     output$maps <- renderUI({
@@ -581,7 +578,7 @@ server <- function(input, output) {
 
         nms <- c(
           intersect(map_order, names(values$groupings)),
-          "Total"
+          "Composite Risk Score"
         )
         cells <- lapply(nms, function(name) {
           div(
@@ -626,7 +623,7 @@ server <- function(input, output) {
           c("Exposure", "Vulnerability", "LOCC"),
           names(values$groupings)
         ),
-        "Total"
+        "Composite Risk Score"
       )
 
       png_files <- character(0)
