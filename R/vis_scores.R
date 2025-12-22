@@ -55,7 +55,7 @@ vis_scores <- function(
       colours = risk_palette,
       limits = c(1, 5),
       oob = scales::squish,
-      na.value = who_map_col("no_data"),
+      na.value = who_map_col("not_applicable"),
       name = value_label
     ) +
     labs(
