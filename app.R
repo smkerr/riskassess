@@ -1,27 +1,21 @@
+# --- Packages ---------------------------------------------------------
 library(shiny)
+library(shinymanager)
+library(bslib)
 library(dplyr)
 library(purrr)
 library(magrittr)
+library(scales)
 library(ggplot2)
 library(DT)
-library(openxlsx)
-library(readxl)
 library(sf)
-library(scales)
-library(bslib)
 library(whomapper)
+library(readxl)
+library(openxlsx)
 library(zip)
-library(shinymanager)
 
-credentials <- data.frame(
-  user = "user",
-  password = "SeasonalRisk2025",
-  permissions = "admin",
-  name = "WHO User",
-  stringsAsFactors = FALSE
-)
 
-# Load helper functions
+# --- Helper functions -------------------------------------------------
 helper_files <- file.path(
   "R",
   c(
@@ -35,133 +29,151 @@ helper_files <- file.path(
     "vis_scores.R"
   )
 )
+
 invisible(lapply(helper_files[file.exists(helper_files)], source))
 
+
+# --- Authentication configuration -------------------------------------
+credentials <- data.frame(
+  # TODO: revert long info
+  user = "", #"user",
+  password = "", #"SeasonalRisk2025",
+  permissions = "admin",
+  name = "WHO User",
+  stringsAsFactors = FALSE
+)
+
+
 # --- UI ---------------------------------------------------------------
-ui <- shinymanager::secure_app(
-  page_sidebar(
-    # title = "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
-    title = div(
-      class = "app-title d-flex align-items-center gap-2",
-      tags$img(
-        src = "who-logo.png",
-        height = "36px",
-        alt = "World Health Organization"
+## --- Title -----------------------------------------------------------
+app_title_ui <- function() {
+  div(
+    class = "app-title d-flex align-items-center gap-2",
+    tags$img(
+      src = "who-logo.png",
+      height = "36px",
+      alt = "World Health Organization"
+    ),
+    span(
+      "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+      style = "font-weight: 700;"
+    )
+  )
+}
+
+## --- Theme -----------------------------------------------------------
+app_theme <- function() {
+  bs_theme(
+    bootswatch = "yeti",
+
+    # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/typography/
+    base_font = font_google("Noto Sans"),
+
+    # Core text colors
+    fg = "#000000", # body text
+    bg = "#FFFFFF",
+
+    # Headings
+    heading_color = "#009CDE", # WHO blue
+
+    # Secondary text
+    secondary = "#595959", # gray
+
+    # Links
+    link_color = "#009CDE", # WHO primary blue
+
+    # Status colors
+    danger = "#9a3709",
+    warning = "#754d06",
+    success = "#1d6339",
+    info = "#245993",
+
+    weights = c(400, 600, 700)
+  )
+}
+
+## --- Sidebar UI ------------------------------------------------------
+sidebar_ui <- function() {
+  sidebar(
+    width = 360,
+    position = "left",
+    open = "open",
+    collapsible = TRUE,
+    tabsetPanel(
+      ### --- Upload/Download ------------------------------------------
+      tabPanel(
+        title = "Upload/Download",
+        br(),
+        h5("Upload Risk Scores File"),
+        p(
+          class = "text-muted small mb-3",
+          style = "font-family: inherit;",
+          "Upload the completed ",
+          strong("WHO Seasonal Risk Assessment Tool workbook"),
+          " containing risk scores by indicator. ",
+          "This file will be used to update calculations across the app."
+        ),
+        fileInput(
+          "upload_data",
+          label = NULL,
+          buttonLabel = "Upload Workbook",
+          accept = c(".xlsx", ".xls")
+        ),
+        h5("Download Updated File"),
+        p(
+          class = "text-muted small mb-3",
+          style = "font-family: inherit;",
+          "Download the ",
+          strong("WHO Seasonal Risk Assessment Tool workbook"),
+          " with updated weights and recalculated risk scores applied."
+        ),
+        uiOutput("download_button")
       ),
-      span(
-        "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
-        style = "font-weight: 700;"
-      )
-    ),
-    theme = bs_theme(
-      bootswatch = "yeti", # spacelab
-
-      # Source: https://srhdteuwpubsa.z6.web.core.windows.net/gho/data/design-language/design-system/typography/
-      base_font = font_google("Noto Sans"),
-      # Core text colors
-      fg = "#000000", # body text
-      bg = "#FFFFFF",
-
-      # Headings
-      heading_color = "#009CDE", # WHO blue
-
-      # Muted / secondary text
-      secondary = "#595959", # gray
-      # Links & interactive text
-      link_color = "#009CDE", # WHO primary blue
-
-      # Status colors
-      danger = "#9a3709",
-      warning = "#754d06",
-      success = "#1d6339",
-      info = "#245993",
-
-      weights = c(400, 600, 700)
-    ),
-    fillable = TRUE,
-    ## --- Sidebar ---
-    sidebar = sidebar(
-      width = 360,
-      position = "left",
-      open = "open",
-      collapsible = TRUE,
-      tabsetPanel(
-        ### --- Instructions ---
-        tabPanel(
-          title = "Instructions",
-          helpText(
-            "Instructions will be added here. Reference to documentation will be included."
-            # "Use this tool to calculate and visualise seasonal risk scores for acute emergencies.",
-            # "To begin, download and complete the WHO Seasonal Risk Assessment Tool workbook.",
-            # "Once completed, upload the workbook using the Upload/Download tab."
-          )
-        ),
-
-        ### --- Upload/Download ---
-        tabPanel(
-          title = "Upload/Download",
-          br(),
-          h5("Upload Risk Scores File"),
-          p(
-            class = "text-muted small mb-3",
-            style = "font-family: inherit;",
-            "Upload the completed ",
-            strong("WHO Seasonal Risk Assessment Tool workbook"),
-            " containing risk scores by indicator. ",
-            "This file will be used to update calculations across the app."
-          ),
-          fileInput(
-            "upload_data",
-            label = NULL,
-            buttonLabel = "Upload Workbook",
-            accept = c(".xlsx", ".xls")
-          ),
-          h5("Download Updated File"),
-          p(
-            class = "text-muted small mb-3",
-            style = "font-family: inherit;",
-            "Download the ",
-            strong("WHO Seasonal Risk Assessment Tool workbook"),
-            " with updated weights and recalculated risk scores applied."
-          ),
-          # downloadButton("download_updated_file", "Download Workbook")
-          uiOutput("download_button")
-        ),
-        ### --- Pillar Weights ---
-        tabPanel(
-          title = "Select Pillar Weights",
-          uiOutput("pillar_weights"),
-          uiOutput("pillar_validation_msg")
-        ),
-        ### --- Indicator Weights ---
-        tabPanel(
-          title = "Select Indicator Weights",
-          uiOutput("indicator_weights"),
-          uiOutput("indicator_validation_msg")
+      ### --- Instructions ---------------------------------------------
+      tabPanel(
+        title = "Instructions",
+        helpText(
+          "Instructions will be added here. Reference to documentation will be included."
         )
+      ),
+      ### --- Pillar Weights -------------------------------------------
+      tabPanel(
+        title = "Select Pillar Weights",
+        uiOutput("pillar_weights"),
+        uiOutput("pillar_validation_msg")
+      ),
+      ### --- Indicator Weights ----------------------------------------
+      tabPanel(
+        title = "Select Indicator Weights",
+        uiOutput("indicator_weights"),
+        uiOutput("indicator_validation_msg")
       )
-    ),
+    )
+  )
+}
 
-    # TODO: move elsewhere
+
+## --- Main UI ---------------------------------------------------------
+main_ui <- function() {
+  tagList(
     tags$style(HTML(
       "
-  .bslib-page-title h1 {
-    color: white !important;
-    font-weight: 600;
-  }
-    .map-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr 2fr;
-      gap: 20px;
-      align-items: start;
-    }
-    .map-cell {
-      padding: 5px;
-    }
-    "
+      .bslib-page-title h1 {
+      color: white !important;
+      font-weight: 600;
+      }
+      .map-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 2fr;
+        gap: 20px;
+        align-items: start;
+      }
+      .map-cell {
+        padding: 5px;
+      }
+      "
     )),
-
-    ## --- Tables ---
+    ### --- Summary Tables ---------------------------------------------
     fluidRow(
       column(
         width = 12,
@@ -170,22 +182,30 @@ ui <- shinymanager::secure_app(
           id = "score_tabs",
 
           tabPanel(
-            "Composite Risk Scores",
+            title = "Composite Risk Scores",
             br(),
             dataTableOutput("table_overall")
           ),
-          tabPanel("Exposure", br(), dataTableOutput("table_exposure")),
+          tabPanel(
+            "Exposure",
+            br(),
+            dataTableOutput("table_exposure")
+          ),
           tabPanel(
             "Vulnerability",
             br(),
             dataTableOutput("table_vulnerability")
           ),
-          tabPanel("LOCC", br(), dataTableOutput("table_locc"))
+          tabPanel(
+            "LOCC",
+            br(),
+            dataTableOutput("table_locc")
+          )
         )
       )
     ),
 
-    ## --- Maps ---
+    ## --- Maps --------------------------------------------------------
     fluidRow(
       column(
         width = 12,
@@ -193,8 +213,13 @@ ui <- shinymanager::secure_app(
         uiOutput("map_download_buttons")
       )
     )
-  ),
-  head_auth = tags$head(
+  )
+}
+
+
+## --- Custom Login JS -------------------------------------------------
+auth_js <- function() {
+  tags$head(
     tags$script(HTML(
       "
       // Intercept Enter and delay submit
@@ -227,42 +252,63 @@ ui <- shinymanager::secure_app(
         const target = document.body;
         authObserver.observe(target, { childList: true, subtree: true });
       });
-    "
+      "
     ))
-  ),
-  tags_top = tags$head(
+  )
+}
+
+
+## --- CSS -------------------------------------------------------------
+global_css <- function() {
+  tagList(
     tags$style(HTML(
       "
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap');
 
-    body,
-    .shinymanager-container,
-    .shinymanager-authentication {
-      font-family: 'Noto Sans', sans-serif !important;
-    }
+      body,
+      .shinymanager-container,
+      .shinymanager-authentication {
+        font-family: 'Noto Sans', sans-serif !important;
+      }
 
-    /* Smooth visual transition after submit */
-    .shinymanager-authentication {
-      transition: opacity 0.4s ease;
-    }
+      /* smooth visual transition after submit */
+      .shinymanager-authentication {
+        transition: opacity 0.4s ease;
+      }
 
-    .shinymanager-authentication.loading {
-      opacity: 0.6;
-      pointer-events: none;
-    }
-  "
+      .shinymanager-authentication.loading {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      "
     ))
+  )
+}
+
+
+## --- Render UI -------------------------------------------------------
+ui <- shinymanager::secure_app(
+  page_sidebar(
+    title = app_title_ui(),
+    theme = app_theme(),
+    fillable = TRUE,
+    sidebar = sidebar_ui(),
+    main_ui()
   ),
+  head_auth = auth_js(),
+  tags_top = global_css(),
   language = "en"
 )
 
+
 # --- Server -----------------------------------------------------------
-server <- function(input, output) {
+server <- function(input, output, session) {
+  ## --- Authentication ------------------------------------------------
   shinymanager::secure_server(
     check_credentials = shinymanager::check_credentials(credentials)
   )
 
-  # Read uploaded data
+  ## --- Data ingestion ------------------------------------------------
   data <- reactive({
     req(input$upload_data)
     tryCatch(
@@ -278,124 +324,32 @@ server <- function(input, output) {
     )
   })
 
-  # Load shapefile for mapping
   shape <- reactive({
     req(input$upload_data)
     whomapper::pull_sfs(
       adm_level = 1,
-      iso3 = "UKR",
+      iso3 = "UKR", # TODO: Make generalizable to any ISO3
       query_server = TRUE
     ) %>%
       rename(Adm1 = adm1_viz_name)
   })
 
-  values <- reactiveValues(risks = NULL)
-
-  # Stores the editable weight tables loaded from Excel
-  weights <- reactiveValues(
-    pillar = NULL,
-    indicator = NULL
-  )
-
-  # Compute pillar weights from inputs or defaults
-  pillar_weightings <- reactive({
-    req(weights$pillar)
-
-    vals <- vapply(
-      seq_len(nrow(weights$pillar)),
-      function(i) {
-        p <- weights$pillar$Pillar[i]
-        input_val <- input[[paste0("pillar_", p)]]
-        if (is.null(input_val)) {
-          weights$pillar$`Pillar Weight`[i]
-        } else {
-          input_val / 100
-        }
-      },
-      numeric(1)
-    )
-
-    vals <- vals / sum(vals, na.rm = TRUE)
-    setNames(vals, weights$pillar$Pillar)
-  })
-
-  # Compute indicator weights within each pillar
-  indicator_groupings <- reactive({
-    req(weights$indicator)
-
-    split(weights$indicator, weights$indicator$Pillar) |>
-      map(function(df) {
-        vals <- vapply(
-          seq_len(nrow(df)),
-          function(i) {
-            id <- paste0("indicator_", df$Pillar[i], "_", i)
-            input_val <- input[[id]]
-            if (is.null(input_val)) {
-              df$`Indicator Weight`[i]
-            } else {
-              input_val / 100
-            }
-          },
-          numeric(1)
-        )
-        vals <- vals / sum(vals, na.rm = TRUE)
-        setNames(vals, df$Indicator)
-      })
-  })
-
-  # Update risks and weighting table when new data or inputs change
-  observe({
-    req(data(), weights$pillar, weights$indicator)
-
-    values$groupings <- indicator_groupings()
-    values$weightings <- pillar_weightings()
-
-    values$weightings_table <- map_dfr(
-      seq_along(values$weightings),
-      \(x) {
-        tibble(
-          pillar = names(values$groupings)[x],
-          metric = names(values$groupings[[x]]),
-          pillar_weight = values$weightings[x],
-          metric_weight = values$groupings[[x]],
-          total_weight = values$weightings[x] * values$groupings[[x]]
-        )
-      }
-    )
-
-    values$risks <- get_risks(
-      groupings = values$groupings,
-      scores = data()$scores,
-      weightings = values$weightings
-    )
-  })
-
-  map_sf <- reactive({
-    req(values$risks, shape())
-
-    shape() %>%
-      left_join(values$risks, by = "Adm1")
-  })
-
-  # Load weight tables from uploaded workbook
   observeEvent(input$upload_data, {
-    req(input$upload_data$datapath)
-
     weights$pillar <- readxl::read_excel(
       input$upload_data$datapath,
       sheet = "Pillar Weights",
-      range = "A1:B4"
+      range = "A1:B4" # TODO: Update along with Excel sheet
     ) |>
       as.data.frame()
 
     weights$indicator <- readxl::read_excel(
       input$upload_data$datapath,
       sheet = "Indicator Weights",
-      range = "A9:F24"
+      range = "A9:F24" # TODO: Update along with Excel sheet
     ) |>
       as.data.frame()
 
-    # ---- VALIDATION ----
+    # Initial validation
     pillar_check <- validate_pillar_weights(weights$pillar)
     indicator_check <- validate_indicator_weights(weights$indicator)
 
@@ -439,12 +393,161 @@ server <- function(input, output) {
         duration = NULL
       )
 
-      # HARD STOP
       values$risks <- NULL
       return()
     }
   })
 
+  ## --- Reactive state ------------------------------------------------
+  values <- reactiveValues(
+    risks = NULL,
+    groupings = NULL,
+    weightings = NULL,
+    weightings_table = NULL
+  )
+
+  ### --- Weight defaults ----------------------------------------------
+  weights <- reactiveValues(
+    pillar = NULL,
+    indicator = NULL
+  )
+
+  ### --- Weight updates -----------------------------------------------
+  pillar_weights_updated <- reactive({
+    req(weights$pillar)
+
+    df <- weights$pillar
+
+    df$`Pillar Weight` <- vapply(
+      seq_len(nrow(df)),
+      function(i) {
+        p <- df$Pillar[i]
+        input_val <- input[[paste0("pillar_", p)]]
+        if (is.null(input_val)) df$`Pillar Weight`[i] else input_val / 100
+      },
+      numeric(1)
+    )
+
+    df
+  })
+
+  indicator_weights_updated <- reactive({
+    req(weights$indicator)
+
+    df <- weights$indicator
+
+    row_in_pillar <- ave(seq_len(nrow(df)), df$Pillar, FUN = seq_along)
+
+    df$`Indicator Weight` <- vapply(
+      seq_len(nrow(df)),
+      function(i) {
+        id <- paste0("indicator_", df$Pillar[i], "_", row_in_pillar[i])
+        input_val <- input[[id]]
+        if (is.null(input_val)) df$`Indicator Weight`[i] else input_val / 100
+      },
+      numeric(1)
+    )
+
+    df
+  })
+
+  ### --- Weight validation --------------------------------------------
+  pillar_validation <- reactive({
+    req(pillar_weights_updated())
+    validate_pillar_weights(pillar_weights_updated())
+  })
+
+  indicator_validation <- reactive({
+    req(indicator_weights_updated())
+    validate_indicator_weights(indicator_weights_updated())
+  })
+
+  weights_valid <- reactive({
+    pv <- pillar_validation()
+    iv <- indicator_validation()
+
+    pv$valid && all(iv$valid)
+  })
+
+  ## --- Weight computation --------------------------------------------
+  pillar_weightings <- reactive({
+    req(weights$pillar)
+
+    vals <- vapply(
+      seq_len(nrow(weights$pillar)),
+      function(i) {
+        p <- weights$pillar$Pillar[i]
+        input_val <- input[[paste0("pillar_", p)]]
+        if (is.null(input_val)) {
+          weights$pillar$`Pillar Weight`[i]
+        } else {
+          input_val / 100
+        }
+      },
+      numeric(1)
+    )
+
+    vals <- vals / sum(vals, na.rm = TRUE)
+    setNames(vals, weights$pillar$Pillar)
+  })
+
+  indicator_groupings <- reactive({
+    req(weights$indicator)
+
+    split(weights$indicator, weights$indicator$Pillar) |>
+      map(function(df) {
+        vals <- vapply(
+          seq_len(nrow(df)),
+          function(i) {
+            id <- paste0("indicator_", df$Pillar[i], "_", i)
+            input_val <- input[[id]]
+            if (is.null(input_val)) {
+              df$`Indicator Weight`[i]
+            } else {
+              input_val / 100
+            }
+          },
+          numeric(1)
+        )
+        vals <- vals / sum(vals, na.rm = TRUE)
+        setNames(vals, df$Indicator)
+      })
+  })
+
+  ## --- Risk computation ----------------------------------------------
+  observe({
+    req(data(), weights$pillar, weights$indicator)
+
+    values$groupings <- indicator_groupings()
+    values$weightings <- pillar_weightings()
+
+    values$weightings_table <- map_dfr(
+      seq_along(values$weightings),
+      \(x) {
+        tibble(
+          pillar = names(values$groupings)[x],
+          metric = names(values$groupings[[x]]),
+          pillar_weight = values$weightings[x],
+          metric_weight = values$groupings[[x]],
+          total_weight = values$weightings[x] * values$groupings[[x]]
+        )
+      }
+    )
+    values$risks <- get_risks(
+      groupings = values$groupings,
+      scores = data()$scores,
+      weightings = values$weightings
+    )
+  })
+
+  map_sf <- reactive({
+    req(values$risks, shape())
+
+    shape() %>%
+      left_join(values$risks, by = "Adm1")
+  })
+
+  ## --- Tables --------------------------------------------------------
   output$table_overall <- DT::renderDT({
     validate(
       need(
@@ -546,142 +649,57 @@ server <- function(input, output) {
     vis_risk_table(df, values$groupings[["LOCC"]])
   })
 
-  # Main observer for table rendering
+  ## --- Maps ----------------------------------------------------------
   observe({
-    # req(!is.null(data()))
-    # req(weights_valid())
+    req(weights_valid(), values$risks, shape())
 
-    if (
-      is.null(data()$scores) ||
-        ncol(data()$scores) == 0 ||
-        is.null(data()$groupings) ||
-        length(data()$groupings) == 0
-    ) {
-      showNotification(
-        "Uploaded file doesn’t match the expected template (missing scores/groupings).",
-        type = "error",
-        duration = 10
-      )
-      values$risks <- NULL
-      return()
-    }
-
-    output$tables <- DT::renderDT(
-      {
-        validate(
-          need(
-            weights_valid(),
-            "Tables are disabled until all weights sum to 100%."
-          )
-        )
-
-        vis_overall_table(values$risks, values$weightings)
-      },
-      options = list(
-        order = if (!is.null(values$risks)) {
-          list(match("Composite Risk Score", names(values$risks)) - 1, "desc")
-        } else {
-          list(0, "desc")
-        },
-        pageLength = 15,
-        searching = FALSE
-      )
+    map_order <- c("Exposure", "Vulnerability", "LOCC")
+    nms <- c(
+      intersect(map_order, names(values$groupings)),
+      "Composite Risk Score"
     )
-  })
 
-  # UI for editing pillar and indicator weights
-  output$pillar_weights <- renderUI({
-    if (is.null(input$upload_data)) {
-      return(helpText("No data uploaded."))
-    }
-
-    req(weights$pillar)
-
-    tagList(
-      lapply(seq_len(nrow(weights$pillar)), function(i) {
-        pillar_name <- weights$pillar$Pillar[i]
-        pillar_weight <- weights$pillar$`Pillar Weight`[i]
-
-        numericInput(
-          inputId = paste0("pillar_", pillar_name),
-          label = paste0(pillar_name, " (%)"),
-          value = round(pillar_weight * 100, 2),
-          min = 0,
-          max = 100,
-          step = 5
-        )
-      })
-    )
-  })
-
-  output$indicator_weights <- renderUI({
-    if (is.null(input$upload_data)) {
-      return(helpText("No data uploaded."))
-    }
-
-    req(weights$indicator)
-
-    tabs <- lapply(unique(weights$indicator$Pillar), function(pillar) {
-      df <- weights$indicator |> filter(Pillar == pillar)
-
-      tabPanel(
-        title = pillar,
-        tagList(
-          lapply(seq_len(nrow(df)), function(i) {
-            numericInput(
-              inputId = paste0("indicator_", pillar, "_", i),
-              label = paste0(df$Indicator[i], " (%)"),
-              value = round(df$`Indicator Weight`[i] * 100, 2),
-              min = 0,
-              max = 100,
-              step = 5
-            )
-          })
-        )
-      )
-    })
-
-    do.call(tabsetPanel, c(list(id = "indicator_tab"), tabs))
-  })
-
-  observe({
-    req(!is.null(data()))
-
-    # Render maps
-    output$maps <- renderUI({
-      req(weights_valid())
-
-      if (!weights_valid()) {
-        div(
-          class = "text-danger",
-          "Maps are disabled until all weights sum to 100%."
-        )
-      } else {
-        validate(need(!is.null(data()), "No valid data available."))
-        req(values$risks, shape())
-
-        map_order <- c("Exposure", "Vulnerability", "LOCC")
-
-        nms <- c(
-          intersect(map_order, names(values$groupings)),
-          "Composite Risk Score"
-        )
-        cells <- lapply(nms, function(name) {
-          div(
-            class = "map-cell",
-            renderPlot(
-              vis_scores(
-                map_sf = map_sf(),
-                value = name,
-                title = name
-              )
-            )
+    lapply(nms, function(name) {
+      local({
+        nm <- name
+        output[[paste0("map_", gsub(" ", "_", nm))]] <- renderPlot({
+          vis_scores(
+            map_sf = map_sf(),
+            value = nm,
+            title = nm
           )
         })
-
-        div(class = "map-grid", cells)
-      }
+      })
     })
+  })
+
+  output$maps <- renderUI({
+    req(weights_valid())
+
+    if (!weights_valid()) {
+      div(
+        class = "text-danger",
+        "Maps are disabled until all weights sum to 100%."
+      )
+    } else {
+      validate(need(!is.null(data()), "No valid data available."))
+      req(values$risks, shape())
+
+      map_order <- c("Exposure", "Vulnerability", "LOCC")
+
+      nms <- c(
+        intersect(map_order, names(values$groupings)),
+        "Composite Risk Score"
+      )
+      cells <- lapply(nms, function(name) {
+        div(
+          class = "map-cell",
+          plotOutput(outputId = paste0("map_", gsub(" ", "_", name)))
+        )
+      })
+
+      div(class = "map-grid", !!!cells)
+    }
   })
 
   output$map_download_buttons <- renderUI({
@@ -742,51 +760,60 @@ server <- function(input, output) {
     }
   )
 
-  # Update weights
-  pillar_weights_updated <- reactive({
+  ## --- Weight Tables UI ----------------------------------------------
+  output$pillar_weights <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(helpText("No data uploaded."))
+    }
+
     req(weights$pillar)
 
-    df <- weights$pillar
+    tagList(
+      lapply(seq_len(nrow(weights$pillar)), function(i) {
+        pillar_name <- weights$pillar$Pillar[i]
+        pillar_weight <- weights$pillar$`Pillar Weight`[i]
 
-    df$`Pillar Weight` <- vapply(
-      seq_len(nrow(df)),
-      function(i) {
-        p <- df$Pillar[i]
-        input_val <- input[[paste0("pillar_", p)]]
-        if (is.null(input_val)) df$`Pillar Weight`[i] else input_val / 100
-      },
-      numeric(1)
+        numericInput(
+          inputId = paste0("pillar_", pillar_name),
+          label = paste0(pillar_name, " (%)"),
+          value = round(pillar_weight * 100, 2),
+          min = 0,
+          max = 100,
+          step = 5
+        )
+      })
     )
-
-    df
   })
 
-  indicator_weights_updated <- reactive({
+  output$indicator_weights <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(helpText("No data uploaded."))
+    }
+
     req(weights$indicator)
 
-    df <- weights$indicator
+    tabs <- lapply(unique(weights$indicator$Pillar), function(pillar) {
+      df <- weights$indicator |> filter(Pillar == pillar)
 
-    # row index within each pillar (matches how UI creates inputs)
-    row_in_pillar <- ave(seq_len(nrow(df)), df$Pillar, FUN = seq_along)
+      tabPanel(
+        title = pillar,
+        tagList(
+          lapply(seq_len(nrow(df)), function(i) {
+            numericInput(
+              inputId = paste0("indicator_", pillar, "_", i),
+              label = paste0(df$Indicator[i], " (%)"),
+              value = round(df$`Indicator Weight`[i] * 100, 2),
+              min = 0,
+              max = 100,
+              step = 5
+            )
+          })
+        )
+      )
+    })
 
-    df$`Indicator Weight` <- vapply(
-      seq_len(nrow(df)),
-      function(i) {
-        id <- paste0("indicator_", df$Pillar[i], "_", row_in_pillar[i])
-        input_val <- input[[id]]
-        if (is.null(input_val)) df$`Indicator Weight`[i] else input_val / 100
-      },
-      numeric(1)
-    )
-
-    df
+    do.call(tabsetPanel, c(list(id = "indicator_tab"), tabs))
   })
-
-  pillar_validation <- reactive({
-    req(pillar_weights_updated())
-    validate_pillar_weights(pillar_weights_updated())
-  })
-
   output$pillar_validation_msg <- renderUI({
     v <- pillar_validation()
 
@@ -802,11 +829,6 @@ server <- function(input, output) {
         )
       )
     }
-  })
-
-  indicator_validation <- reactive({
-    req(indicator_weights_updated())
-    validate_indicator_weights(indicator_weights_updated())
   })
 
   output$indicator_validation_msg <- renderUI({
@@ -838,13 +860,7 @@ server <- function(input, output) {
     }
   })
 
-  weights_valid <- reactive({
-    pv <- pillar_validation()
-    iv <- indicator_validation()
-
-    pv$valid && all(iv$valid)
-  })
-
+  ## --- Workbook download -----------------------------------------------
   output$download_button <- renderUI({
     if (is.null(input$upload_data)) {
       return(NULL)
