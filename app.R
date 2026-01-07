@@ -14,6 +14,8 @@ library(readxl)
 library(openxlsx)
 library(zip)
 
+options(bslib.inspect = FALSE)
+
 
 # --- Helper functions -------------------------------------------------
 helper_files <- file.path(
@@ -35,9 +37,8 @@ invisible(lapply(helper_files[file.exists(helper_files)], source))
 
 # --- Authentication configuration -------------------------------------
 credentials <- data.frame(
-  # TODO: revert long info
-  user = "", #"user",
-  password = "", #"SeasonalRisk2025",
+  user = "user",
+  password = "SeasonalRisk2025",
   permissions = "admin",
   name = "WHO User",
   stringsAsFactors = FALSE
@@ -45,19 +46,41 @@ credentials <- data.frame(
 
 
 # --- UI ---------------------------------------------------------------
+## --- Download/Upload Data --------------------------------------------
+app_header_actions_ui <- function() {
+  div(
+    class = "d-flex align-items-center gap-2 ms-auto",
+
+    actionButton(
+      "open_upload_modal",
+      label = "Upload workbook",
+      icon = icon("upload"),
+      class = "btn btn-primary"
+    ),
+
+    uiOutput("header_download_button")
+  )
+}
+
 ## --- Title -----------------------------------------------------------
 app_title_ui <- function() {
   div(
-    class = "app-title d-flex align-items-center gap-2",
-    tags$img(
-      src = "who-logo.png",
-      height = "36px",
-      alt = "World Health Organization"
+    class = "d-flex align-items-center w-100 gap-3",
+
+    div(
+      class = "d-flex align-items-center gap-2",
+      tags$img(
+        src = "who-logo.png",
+        height = "36px",
+        alt = "World Health Organization"
+      ),
+      span(
+        "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
+        style = "font-weight: 700;"
+      )
     ),
-    span(
-      "WHO Seasonal Risk Assessment Tool for Acute Emergencies",
-      style = "font-weight: 700;"
-    )
+
+    app_header_actions_ui()
   )
 }
 
@@ -100,35 +123,6 @@ sidebar_ui <- function() {
     open = "open",
     collapsible = TRUE,
     tabsetPanel(
-      ### --- Upload/Download ------------------------------------------
-      tabPanel(
-        title = "Upload/Download",
-        br(),
-        h5("Upload Risk Scores File"),
-        p(
-          class = "text-muted small mb-3",
-          style = "font-family: inherit;",
-          "Upload the completed ",
-          strong("WHO Seasonal Risk Assessment Tool workbook"),
-          " containing risk scores by indicator. ",
-          "This file will be used to update calculations across the app."
-        ),
-        fileInput(
-          "upload_data",
-          label = NULL,
-          buttonLabel = "Upload Workbook",
-          accept = c(".xlsx", ".xls")
-        ),
-        h5("Download Updated File"),
-        p(
-          class = "text-muted small mb-3",
-          style = "font-family: inherit;",
-          "Download the ",
-          strong("WHO Seasonal Risk Assessment Tool workbook"),
-          " with updated weights and recalculated risk scores applied."
-        ),
-        uiOutput("download_button")
-      ),
       ### --- Instructions ---------------------------------------------
       tabPanel(
         title = "Instructions",
@@ -280,6 +274,38 @@ global_css <- function() {
         opacity: 0.6;
         pointer-events: none;
       }
+
+      /* Header buttons */
+      .bslib-page-title .btn {
+        font-weight: 600;
+        padding: 6px 14px;
+      }
+
+      /* Keep buttons compact in header */
+      .bslib-page-title .btn i {
+        margin-right: 6px;
+      }
+
+      /* Helper text spacing */
+      .bslib-page-title .text-muted,
+      .bslib-page-title .text-warning {
+        margin-top: 2px;
+      }
+
+      /* Disabled primary button – visually distinct but readable */
+      .bslib-page-title .btn.btn-primary.btn-disabled {
+          background-color: #6c757d !important;
+          border-color: #6c757d !important;
+
+          color: #ffffff !important;
+          cursor: not-allowed;
+          pointer-events: none;
+        }
+
+      .bslib-page-title .btn.btn-primary.btn-disabled:hover {
+          background-color: #6c757d !important;
+          border-color: #6c757d !important;
+        }
       "
     ))
   )
@@ -706,7 +732,7 @@ server <- function(input, output, session) {
     req(weights_valid(), values$risks, shape())
 
     div(
-      class = "d-flex justify-content-start mt-3 mb-4",
+      class = "d-flex justify-content-end mt-3 mb-4",
       downloadButton(
         "download_maps_png",
         "Download maps",
@@ -860,24 +886,53 @@ server <- function(input, output, session) {
     }
   })
 
-  ## --- Workbook download -----------------------------------------------
-  output$download_button <- renderUI({
+  ## --- Workbook upload/download --------------------------------------
+  observeEvent(input$open_upload_modal, {
+    showModal(
+      modalDialog(
+        title = "Upload WHO Seasonal Risk Assessment workbook",
+
+        fileInput(
+          "upload_data",
+          label = NULL,
+          buttonLabel = "Choose Excel file",
+          accept = c(".xlsx", ".xls"),
+          width = "100%"
+        ),
+
+        footer = modalButton("Close"),
+        easyClose = TRUE
+      )
+    )
+  })
+
+  output$header_download_button <- renderUI({
+    btn_class <- "btn btn-primary"
+    btn_icon <- icon("download")
+    warning_text <- NULL
+
     if (is.null(input$upload_data)) {
-      return(NULL)
+      btn_class <- "btn btn-secondary"
+      btn_icon <- icon("lock")
+    } else if (!weights_valid()) {
+      btn_class <- "btn btn-secondary"
+      btn_icon <- icon("lock")
+      warning_text <- span(
+        class = "text-warning small",
+        "Fix weights to enable download"
+      )
     }
 
-    if (!weights_valid()) {
-      div(
-        class = "text-warning small",
-        "Weights must sum to 100% before downloading the updated workbook."
-      )
-    } else {
+    div(
+      class = "d-flex flex-column align-items-start",
       downloadButton(
         "download_updated_file",
-        "Download Workbook",
-        class = "btn-primary"
-      )
-    }
+        label = "Download workbook",
+        icon = btn_icon,
+        class = btn_class
+      ),
+      warning_text
+    )
   })
 
   # File downloads
