@@ -13,8 +13,14 @@ library(whomapper)
 library(readxl)
 library(openxlsx)
 library(zip)
+library(countrycode)
 
-options(bslib.inspect = FALSE)
+options(
+  bslib.inspect = FALSE,
+  shiny.autoreload = FALSE,
+  sass.cache = TRUE,
+  shiny.devmode = FALSE
+)
 
 
 # --- Helper functions -------------------------------------------------
@@ -351,11 +357,50 @@ server <- function(input, output, session) {
     )
   })
 
+  country_from_workbook <- reactive({
+    req(input$upload_data)
+
+    country <- readxl::read_excel(
+      input$upload_data$datapath,
+      sheet = "1. Describe Your Emergency",
+      range = "D6",
+      col_names = FALSE
+    )[[1, 1]]
+
+    validate(
+      need(
+        is.character(country) && nzchar(country),
+        "Country name in '1. Describe Your Acute Emergency'!D6 is missing."
+      )
+    )
+
+    trimws(country)
+  })
+
+  iso3_from_country <- reactive({
+    req(country_from_workbook())
+
+    iso3 <- countrycode(
+      sourcevar = country_from_workbook(),
+      origin = "country.name",
+      destination = "iso3c"
+    )
+
+    validate(
+      need(
+        !is.na(iso3),
+        paste("Could not map country name to ISO3:", country_from_workbook())
+      )
+    )
+
+    iso3
+  })
+
   shape <- reactive({
     req(input$upload_data)
     whomapper::pull_sfs(
       adm_level = 1,
-      iso3 = "UKR", # TODO: Make generalizable to any ISO3
+      iso3 = iso3_from_country(), # Aligns with Country / Territory value entered in 1. Describe Your Emergency
       query_server = TRUE
     ) %>%
       rename(`Subnational Level` = adm1_viz_name)
