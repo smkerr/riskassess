@@ -20,11 +20,13 @@ vis_risk_table <- function(tbl, weightings, key_col = NULL) {
 
   # ---- STEP 1: Sort by last column, NAs always last ----
   last_col <- names(tbl)[ncol(tbl)]
-  tbl <- tbl[order(
-    is.na(tbl[[last_col]]),                         # NA = TRUE → bottom
-    -tbl[[last_col]],                               # descending
-    na.last = TRUE
-  ), ]
+  tbl <- tbl[
+    order(
+      is.na(tbl[[last_col]]), # NA = TRUE → bottom
+      -tbl[[last_col]], # descending
+      na.last = TRUE
+    ),
+  ]
 
   # ---- STEP 2: Format numeric columns to 2 decimals ----
   tbl_fmt <- tbl %>%
