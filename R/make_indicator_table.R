@@ -15,7 +15,7 @@ make_indicator_table <- function(scores, risks, groupings, pillar_name) {
 
   # Build final table
   tibble::tibble(
-    Adm1 = scores$Adm1,
+    `Subnational Level` = scores$`Subnational Level`,
     raw,
     !!pillar_name := pillar_scores
   )

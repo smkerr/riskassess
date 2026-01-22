@@ -38,7 +38,8 @@ invisible(lapply(helper_files[file.exists(helper_files)], source))
 # --- Authentication configuration -------------------------------------
 credentials <- data.frame(
   user = "user",
-  password = "SeasonalRisk2025",
+  # TODO: revert password
+  password = "pwd", # "SeasonalRisk2025",
   permissions = "admin",
   name = "WHO User",
   stringsAsFactors = FALSE
@@ -191,9 +192,9 @@ main_ui <- function() {
             dataTableOutput("table_vulnerability")
           ),
           tabPanel(
-            "LOCC",
+            "Coping Capacity",
             br(),
-            dataTableOutput("table_locc")
+            dataTableOutput("table_coping_capacity")
           )
         )
       )
@@ -357,22 +358,35 @@ server <- function(input, output, session) {
       iso3 = "UKR", # TODO: Make generalizable to any ISO3
       query_server = TRUE
     ) %>%
-      rename(Adm1 = adm1_viz_name)
+      rename(`Subnational Level` = adm1_viz_name)
   })
 
   observeEvent(input$upload_data, {
     weights$pillar <- readxl::read_excel(
       input$upload_data$datapath,
-      sheet = "Pillar Weights",
-      range = "A1:B4" # TODO: Update along with Excel sheet
+      sheet = "4. Define Weights",
+      range = "B7:C10" # Align with Step 4A. Define Pillar Weights table
     ) |>
       as.data.frame()
 
-    weights$indicator <- readxl::read_excel(
+    raw_indicator_weights_tbl <- readxl::read_excel(
       input$upload_data$datapath,
-      sheet = "Indicator Weights",
-      range = "A9:F24" # TODO: Update along with Excel sheet
-    ) |>
+      sheet = "4. Define Weights",
+      range = cellranger::cell_cols("F:I")
+    )
+
+    weights$indicator <- raw_indicator_weights_tbl |> # Align with Step 4B. Define Indicator Weights table
+      # use first row as column names
+      rlang::set_names(unlist(raw_indicator_weights_tbl[1, ])) |>
+      # drop header row
+      dplyr::slice(-1) |>
+      # drop empty rows
+      dplyr::filter(!is.na(Indicator), Indicator != "") |>
+      # validate numeric values
+      dplyr::mutate(
+        `Indicator Weight` = as.numeric(`Indicator Weight`),
+        `Overall Weight` = as.numeric(`Overall Weight`)
+      ) |>
       as.data.frame()
 
     # Initial validation
@@ -570,7 +584,7 @@ server <- function(input, output, session) {
     req(values$risks, shape())
 
     shape() %>%
-      left_join(values$risks, by = "Adm1")
+      left_join(values$risks, by = "Subnational Level")
   })
 
   ## --- Tables --------------------------------------------------------
@@ -593,10 +607,10 @@ server <- function(input, output, session) {
 
     df <- values$risks %>%
       dplyr::select(
-        Adm1,
+        `Subnational Level`,
         Exposure,
         Vulnerability,
-        LOCC,
+        `Coping Capacity`,
         `Composite Risk Score`
       )
 
@@ -651,7 +665,7 @@ server <- function(input, output, session) {
     vis_risk_table(df, values$groupings[["Vulnerability"]])
   })
 
-  output$table_locc <- DT::renderDT({
+  output$table_coping_capacity <- DT::renderDT({
     validate(
       need(
         input$upload_data,
@@ -670,16 +684,16 @@ server <- function(input, output, session) {
       scores = data()$scores,
       risks = values$risks,
       groupings = values$groupings,
-      pillar_name = "LOCC"
+      pillar_name = "Coping Capacity"
     )
-    vis_risk_table(df, values$groupings[["LOCC"]])
+    vis_risk_table(df, values$groupings[["Coping Capacity"]])
   })
 
   ## --- Maps ----------------------------------------------------------
   observe({
     req(weights_valid(), values$risks, shape())
 
-    map_order <- c("Exposure", "Vulnerability", "LOCC")
+    map_order <- c("Exposure", "Vulnerability", "Coping Capacity")
     nms <- c(
       intersect(map_order, names(values$groupings)),
       "Composite Risk Score"
@@ -711,7 +725,7 @@ server <- function(input, output, session) {
       validate(need(!is.null(data()), "No valid data available."))
       req(values$risks, shape())
 
-      map_order <- c("Exposure", "Vulnerability", "LOCC")
+      map_order <- c("Exposure", "Vulnerability", "Coping Capacity")
 
       nms <- c(
         intersect(map_order, names(values$groupings)),
@@ -750,7 +764,7 @@ server <- function(input, output, session) {
 
       map_names <- c(
         intersect(
-          c("Exposure", "Vulnerability", "LOCC"),
+          c("Exposure", "Vulnerability", "Coping Capacity"),
           names(values$groupings)
         ),
         "Composite Risk Score"
@@ -896,7 +910,7 @@ server <- function(input, output, session) {
           "upload_data",
           label = NULL,
           buttonLabel = "Choose Excel file",
-          accept = c(".xlsx", ".xls"),
+          accept = c(".xlsx", ".xls", ".xlsm"),
           width = "100%"
         ),
 
@@ -917,10 +931,6 @@ server <- function(input, output, session) {
     } else if (!weights_valid()) {
       btn_class <- "btn btn-secondary"
       btn_icon <- icon("lock")
-      warning_text <- span(
-        class = "text-warning small",
-        "Fix weights to enable download"
-      )
     }
 
     div(
@@ -930,15 +940,14 @@ server <- function(input, output, session) {
         label = "Download workbook",
         icon = btn_icon,
         class = btn_class
-      ),
-      warning_text
+      )
     )
   })
 
   # File downloads
   output$download_updated_file <- downloadHandler(
     filename = function() {
-      paste0("WHO_Seasonal_Risk_Assessment_Tool_", Sys.Date(), ".xlsx")
+      paste0("WHO_Seasonal_Risk_Assessment_Tool_", Sys.Date(), ".xlsm")
     },
     content = function(file) {
       req(
