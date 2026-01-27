@@ -18,23 +18,25 @@ vis_risk_table <- function(tbl, weightings, key_col = NULL) {
     key_col <- names(tbl)[1]
   }
 
-  # ---- STEP 1: Sort by last column, NAs always last ----
+  # Identify last (total) column
   last_col <- names(tbl)[ncol(tbl)]
+
+  # ---- Sort by last column, NAs always last ----
   tbl <- tbl[
     order(
-      is.na(tbl[[last_col]]), # NA = TRUE → bottom
-      -tbl[[last_col]], # descending
+      is.na(tbl[[last_col]]),
+      -tbl[[last_col]],
       na.last = TRUE
     ),
   ]
 
-  # ---- STEP 2: Format numeric columns to 2 decimals ----
+  # ---- Format numeric columns to 2 decimals ----
   tbl_fmt <- tbl %>%
-    mutate(across(where(is.numeric), ~ sprintf("%.2f", .x)))
+    dplyr::mutate(across(where(is.numeric), ~ sprintf("%.2f", .x)))
 
-  # ---- STEP 3: Add % to weight-bearing columns ----
+  # ---- Add % to weight-bearing indicator columns ----
   tbl_fmt <- tbl_fmt %>%
-    rename_with(function(cols) {
+    dplyr::rename_with(function(cols) {
       sapply(cols, function(col) {
         if (col %in% names(weightings)) {
           paste0(col, " (", scales::percent(weightings[col]), ")")
@@ -43,6 +45,9 @@ vis_risk_table <- function(tbl, weightings, key_col = NULL) {
         }
       })
     })
+
+  # ---- Label total column ----
+  names(tbl_fmt)[names(tbl_fmt) == last_col] <- paste0(last_col, " (Total)")
 
   tbl_fmt
 }
