@@ -43,8 +43,8 @@ invisible(lapply(helper_files[file.exists(helper_files)], source))
 
 # --- Authentication configuration -------------------------------------
 credentials <- data.frame(
-  user = "",
-  password = "",
+  user = "sra_demo",
+  password = "winter2026",
   permissions = "admin",
   name = "WHO User",
   stringsAsFactors = FALSE
