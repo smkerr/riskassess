@@ -45,7 +45,8 @@ invisible(lapply(helper_files[file.exists(helper_files)], source))
 credentials <- data.frame(
   user = "user",
   # TODO: revert password
-  password = "pwd", # "SeasonalRisk2025",
+  user = "",
+  password = "",
   permissions = "admin",
   name = "WHO User",
   stringsAsFactors = FALSE
@@ -124,7 +125,7 @@ app_theme <- function() {
 
 ## --- Sidebar UI ------------------------------------------------------
 sidebar_ui <- function() {
-  sidebar(
+  bslib::sidebar(
     width = 360,
     position = "left",
     open = "open",
@@ -133,8 +134,63 @@ sidebar_ui <- function() {
       ### --- Instructions ---------------------------------------------
       tabPanel(
         title = "Instructions",
-        helpText(
-          "Instructions will be added here. Reference to documentation will be included."
+        tags$div(
+          class = "p-2",
+          tags$h5("How to use this app"),
+          tags$p(
+            "This application displays results from the WHO Seasonal Risk Assessment Excel workbook. ",
+            tags$span(
+              class = "sidebar-strong",
+              "All indicators, weights, and scores must be defined in Excel before upload."
+            ),
+            " The app does not calculate or modify results."
+          ),
+
+          tags$h5("Quick start"),
+          tags$ol(
+            tags$li(
+              tags$span(
+                class = "sidebar-strong",
+                "Complete the Excel workbook"
+              ),
+              tags$ul(
+                tags$li(
+                  "Select indicators and assign them to Exposure, Vulnerability, or Coping Capacity."
+                ),
+                tags$li("Define pillar weights and indicator weights."),
+                tags$li("Enter indicator scores for each geographic unit."),
+                tags$li(
+                  "Confirm that composite scores are calculated in the workbook."
+                )
+              )
+            ),
+            tags$li(
+              tags$span(
+                class = "sidebar-strong",
+                "Upload the completed workbook"
+              ),
+              " using the Upload workbook button above."
+            ),
+            tags$li(
+              tags$span(class = "sidebar-strong", "View results"),
+              " in the Risk Scores tabs."
+            )
+          ),
+
+          tags$h5("Notes"),
+          tags$ul(
+            tags$li(
+              "Results are relative and intended for comparison within the same assessment."
+            ),
+            tags$li(
+              "To test alternative assumptions, update weights or indicator selections in Excel and re-upload the file."
+            )
+          ),
+
+          tags$hr(),
+          tags$p(tags$em(
+            "Methodological documentation link will be provided here."
+          ))
         )
       ),
       ### --- Pillar Weights -------------------------------------------
@@ -172,6 +228,19 @@ main_ui <- function() {
       .map-cell {
         padding: 5px;
       }
+      /* Fix blurry text in bslib sidebar */
+      .bslib-sidebar,
+      .bslib-sidebar * {
+        transform: none !important;
+        backface-visibility: hidden;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* Force clean font rendering */
+      .bslib-sidebar {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;
+      }
       "
     )),
     ### --- Summary Tables ---------------------------------------------
@@ -185,22 +254,22 @@ main_ui <- function() {
           tabPanel(
             title = "Composite Risk Scores",
             br(),
-            dataTableOutput("table_overall")
+            uiOutput("table_overall")
           ),
           tabPanel(
             "Exposure",
             br(),
-            dataTableOutput("table_exposure")
+            uiOutput("table_exposure")
           ),
           tabPanel(
             "Vulnerability",
             br(),
-            dataTableOutput("table_vulnerability")
+            uiOutput("table_vulnerability")
           ),
           tabPanel(
             "Coping Capacity",
             br(),
-            dataTableOutput("table_coping_capacity")
+            uiOutput("table_coping_capacity")
           )
         )
       )
@@ -633,21 +702,34 @@ server <- function(input, output, session) {
   })
 
   ## --- Tables --------------------------------------------------------
-  output$table_overall <- DT::renderDT({
-    validate(
-      need(
-        input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
+  no_workbook_message <- function() {
+    tagList(
+      tags$h4("No workbook uploaded"),
+      tags$p(
+        "To view risk scores, upload a completed WHO Seasonal Risk Assessment Excel workbook ",
+        "using the Upload workbook button in the upper righthand corner."
+      ),
+      tags$p(
+        "The workbook must include defined indicators, weights, and scores. "
       )
     )
+  }
 
-    validate(
-      need(
-        weights_valid(),
-        "Tables are disabled until all weights sum to 100%."
-      )
-    )
+  weights_invalid_message <- function() {
+    tags$p("Tables are disabled until all weights sum to 100%.")
+  }
 
+  output$table_overall <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(no_workbook_message())
+    }
+    if (!weights_valid()) {
+      return(weights_invalid_message())
+    }
+    DT::dataTableOutput("table_overall_dt")
+  })
+
+  output$table_overall_dt <- DT::renderDT({
     req(values$risks)
 
     df <- values$risks %>%
@@ -662,20 +744,18 @@ server <- function(input, output, session) {
     vis_risk_table(df, values$weightings)
   })
 
-  output$table_exposure <- DT::renderDT({
-    validate(
-      need(
-        input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
-      )
-    )
+  output$table_exposure <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(no_workbook_message())
+    }
+    if (!weights_valid()) {
+      return(weights_invalid_message())
+    }
+    DT::dataTableOutput("table_exposure_dt")
+  })
 
-    validate(
-      need(
-        weights_valid(),
-        "Tables are disabled until all weights sum to 100%."
-      )
-    )
+  output$table_exposure_dt <- DT::renderDT({
+    req(values$risks, values$groupings, data())
 
     df <- make_indicator_table(
       scores = data()$scores,
@@ -686,20 +766,18 @@ server <- function(input, output, session) {
     vis_risk_table(df, values$groupings[["Exposure"]])
   })
 
-  output$table_vulnerability <- DT::renderDT({
-    validate(
-      need(
-        input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
-      )
-    )
+  output$table_vulnerability <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(no_workbook_message())
+    }
+    if (!weights_valid()) {
+      return(weights_invalid_message())
+    }
+    DT::dataTableOutput("table_vulnerability_dt")
+  })
 
-    validate(
-      need(
-        weights_valid(),
-        "Tables are disabled until all weights sum to 100%."
-      )
-    )
+  output$table_vulnerability_dt <- DT::renderDT({
+    req(values$risks, values$groupings, data())
 
     df <- make_indicator_table(
       scores = data()$scores,
@@ -710,20 +788,18 @@ server <- function(input, output, session) {
     vis_risk_table(df, values$groupings[["Vulnerability"]])
   })
 
-  output$table_coping_capacity <- DT::renderDT({
-    validate(
-      need(
-        input$upload_data,
-        "Please upload a completed WHO Seasonal Risk Assessment workbook to view risk scores using the Upload/Download panel on the left."
-      )
-    )
+  output$table_coping_capacity <- renderUI({
+    if (is.null(input$upload_data)) {
+      return(no_workbook_message())
+    }
+    if (!weights_valid()) {
+      return(weights_invalid_message())
+    }
+    DT::dataTableOutput("table_coping_capacity_dt")
+  })
 
-    validate(
-      need(
-        weights_valid(),
-        "Tables are disabled until all weights sum to 100%."
-      )
-    )
+  output$table_coping_capacity_dt <- DT::renderDT({
+    req(values$risks, values$groupings, data())
 
     df <- make_indicator_table(
       scores = data()$scores,
@@ -848,7 +924,18 @@ server <- function(input, output, session) {
   ## --- Weight Tables UI ----------------------------------------------
   output$pillar_weights <- renderUI({
     if (is.null(input$upload_data)) {
-      return(helpText("No data uploaded."))
+      return(
+        tags$div(
+          class = "p-2",
+          tags$h5("No workbook uploaded"),
+          tags$p(
+            "Pillar weights are defined in the Seasonal Risk Assessment Excel workbook."
+          ),
+          tags$p(
+            "Upload a completed workbook to view and review pillar weights."
+          )
+        )
+      )
     }
 
     req(weights$pillar)
@@ -872,7 +959,18 @@ server <- function(input, output, session) {
 
   output$indicator_weights <- renderUI({
     if (is.null(input$upload_data)) {
-      return(helpText("No data uploaded."))
+      return(
+        tags$div(
+          class = "p-2",
+          tags$h5("No workbook uploaded"),
+          tags$p(
+            "Indicator weights are defined in the Seasonal Risk Assessment Excel workbook."
+          ),
+          tags$p(
+            "Upload a completed workbook to view and review indicator weights."
+          )
+        )
+      )
     }
 
     req(weights$indicator)
@@ -955,7 +1053,7 @@ server <- function(input, output, session) {
           "upload_data",
           label = NULL,
           buttonLabel = "Choose Excel file",
-          accept = c(".xlsx", ".xls", ".xlsm"),
+          accept = c(".xlsx"),
           width = "100%"
         ),
 
@@ -992,43 +1090,186 @@ server <- function(input, output, session) {
   # File downloads
   output$download_updated_file <- downloadHandler(
     filename = function() {
-      paste0("WHO_Seasonal_Risk_Assessment_Tool_", Sys.Date(), ".xlsm")
+      tryCatch(
+        {
+          paste0("WHO_Seasonal_Risk_Assessment_Tool_", Sys.Date(), ".xlsx")
+        },
+        error = function(e) {
+          showNotification(
+            paste("Error in filename function:", e$message),
+            type = "error",
+            duration = NULL
+          )
+          "download.xlsx"
+        }
+      )
     },
     content = function(file) {
-      req(
-        input$upload_data$datapath,
-        pillar_weights_updated(),
-        indicator_weights_updated(),
-        weights_valid()
+      tryCatch(
+        {
+          req(input$upload_data)
+
+          pillar_data_check <- pillar_weights_updated()
+
+          indicator_data_check <- indicator_weights_updated()
+
+          weights_check <- weights_valid()
+
+          validate(
+            need(
+              !is.null(input$upload_data$datapath),
+              "Upload data path is missing"
+            )
+          )
+
+          # Strategy: Copy the original file and modify only specific cells
+          # This preserves all formatting, formulas, and conditional formatting
+          upload_path <- input$upload_data$datapath
+
+          # Create a temporary copy of the uploaded file
+          temp_copy <- tempfile(fileext = ".xlsx")
+          file.copy(upload_path, temp_copy, overwrite = TRUE)
+
+          # Try openxlsx2 first (better at handling complex files)
+          if (requireNamespace("openxlsx2", quietly = TRUE)) {
+            wb <- openxlsx2::wb_load(temp_copy)
+            wb_type <- "openxlsx2"
+          } else {
+            # Try openxlsx loadWorkbook with the copy
+            wb <- tryCatch(
+              {
+                loaded_wb <- openxlsx::loadWorkbook(temp_copy)
+                loaded_wb
+              },
+              error = function(e) {
+                # Fallback: recreate workbook
+                sheet_names <- readxl::excel_sheets(temp_copy)
+                new_wb <- openxlsx::createWorkbook()
+                for (sheet_name in sheet_names) {
+                  tryCatch(
+                    {
+                      sheet_data <- readxl::read_excel(
+                        temp_copy,
+                        sheet = sheet_name,
+                        col_names = FALSE,
+                        .name_repair = "minimal"
+                      )
+                      openxlsx::addWorksheet(new_wb, sheet_name)
+                      openxlsx::writeData(
+                        new_wb,
+                        sheet = sheet_name,
+                        x = sheet_data,
+                        colNames = FALSE
+                      )
+                    },
+                    error = function(e2) {
+                      message(
+                        "Warning: Could not process sheet '",
+                        sheet_name,
+                        "': ",
+                        e2$message
+                      )
+                    }
+                  )
+                }
+                new_wb
+              }
+            )
+            wb_type <- "openxlsx"
+          }
+
+          # Write pillar weights to "4. Define Weights" sheet
+          sheet_list <- if (wb_type == "openxlsx2") {
+            wb$sheet_names
+          } else {
+            names(wb)
+          }
+
+          if ("4. Define Weights" %in% sheet_list) {
+            pillar_data <- pillar_weights_updated()
+
+            # Row 7 = headers, Rows 8-10 = data
+            if (wb_type == "openxlsx2") {
+              # openxlsx2 syntax
+              wb <- openxlsx2::wb_add_data(
+                wb,
+                sheet = "4. Define Weights",
+                x = pillar_data,
+                start_row = 8,
+                start_col = 2,
+                col_names = FALSE
+              )
+            } else {
+              # openxlsx syntax
+              openxlsx::writeData(
+                wb,
+                sheet = "4. Define Weights",
+                x = pillar_data,
+                startRow = 8,
+                startCol = 2,
+                colNames = FALSE
+              )
+            }
+
+            # Write indicator weights to the same sheet
+            indicator_data <- indicator_weights_updated()
+
+            if (
+              !is.null(indicator_data) &&
+                nrow(indicator_data) > 0 &&
+                "Indicator Weight" %in% names(indicator_data)
+            ) {
+              ind_weights <- indicator_data[["Indicator Weight"]]
+
+              # Write just the Indicator Weight column values
+              # Row 7 = column headers, Rows 8+ = data
+              if (wb_type == "openxlsx2") {
+                wb <- openxlsx2::wb_add_data(
+                  wb,
+                  sheet = "4. Define Weights",
+                  x = as.data.frame(ind_weights),
+                  start_row = 8,
+                  start_col = 8,
+                  col_names = FALSE
+                )
+              } else {
+                openxlsx::writeData(
+                  wb,
+                  sheet = "4. Define Weights",
+                  x = ind_weights,
+                  startRow = 8,
+                  startCol = 8,
+                  colNames = FALSE
+                )
+              }
+            }
+          }
+
+          if (wb_type == "openxlsx2") {
+            openxlsx2::wb_save(wb, file, overwrite = TRUE)
+          } else {
+            openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+          }
+        },
+        error = function(e) {
+          showNotification(
+            paste(
+              "Download error:",
+              e$message,
+              "\nCall stack:",
+              paste(deparse(sys.calls()), collapse = "\n")
+            ),
+            type = "error",
+            duration = NULL
+          )
+          message("ERROR: ", e$message)
+          message(
+            "ERROR traceback: ",
+            paste(deparse(sys.calls()), collapse = "\n")
+          )
+          stop(e)
+        }
       )
-
-      wb <- openxlsx::loadWorkbook(input$upload_data$datapath)
-
-      if ("Pillar Weights" %in% names(wb)) {
-        openxlsx::writeData(
-          wb,
-          sheet = "Pillar Weights",
-          x = pillar_weights_updated(),
-          startRow = 2,
-          startCol = 1,
-          colNames = FALSE #,
-          # withFilter = TRUE
-        )
-      }
-
-      if ("Indicator Weights" %in% names(wb)) {
-        openxlsx::writeData(
-          wb,
-          sheet = "Indicator Weights",
-          x = indicator_weights_updated()$`Indicator Weight`,
-          startRow = 10,
-          startCol = 5,
-          colNames = FALSE #,
-          # withFilter = TRUE
-        )
-      }
-
-      openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
 }
