@@ -3,3 +3,6 @@
 .DS_Store
 archive/
 .Renviron
+
+# Excel temporary / lock files
+~$*.xlsx
