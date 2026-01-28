@@ -10,7 +10,7 @@ read_data <- function(path) {
   indicator_data <- readxl::read_excel(
     path,
     sheet = "3. Enter Indicator Scores",
-    skip = 6, # skip to row containing indicator name
+    skip = 7, # skip to row containing indicator name
   ) |>
     # drop Indicator ID row
     dplyr::filter(
@@ -31,7 +31,7 @@ read_data <- function(path) {
   indicator_meta <- readxl::read_excel(
     path,
     sheet = "2. Define Indicators",
-    skip = 4 # skip to row containing indicator names
+    skip = 5 # skip to row containing column names
   ) |>
     filter(Include)
 

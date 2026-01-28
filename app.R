@@ -477,7 +477,7 @@ server <- function(input, output, session) {
     weights$pillar <- readxl::read_excel(
       input$upload_data$datapath,
       sheet = "4. Define Weights",
-      range = "B7:C10" # Align with Step 4A. Define Pillar Weights table
+      range = "B8:C11" # Align with Step 4A. Define Pillar Weights table
     ) |>
       as.data.frame()
 
@@ -1186,14 +1186,14 @@ server <- function(input, output, session) {
           if ("4. Define Weights" %in% sheet_list) {
             pillar_data <- pillar_weights_updated()
 
-            # Row 7 = headers, Rows 8-10 = data
+            # Row 8 = headers, Rows 9-11 = data
             if (wb_type == "openxlsx2") {
               # openxlsx2 syntax
               wb <- openxlsx2::wb_add_data(
                 wb,
                 sheet = "4. Define Weights",
                 x = pillar_data,
-                start_row = 8,
+                start_row = 9,
                 start_col = 2,
                 col_names = FALSE
               )
@@ -1203,7 +1203,7 @@ server <- function(input, output, session) {
                 wb,
                 sheet = "4. Define Weights",
                 x = pillar_data,
-                startRow = 8,
+                startRow = 9,
                 startCol = 2,
                 colNames = FALSE
               )
@@ -1220,13 +1220,13 @@ server <- function(input, output, session) {
               ind_weights <- indicator_data[["Indicator Weight"]]
 
               # Write just the Indicator Weight column values
-              # Row 7 = column headers, Rows 8+ = data
+              # Row 8 = column headers, Rows 9+ = data
               if (wb_type == "openxlsx2") {
                 wb <- openxlsx2::wb_add_data(
                   wb,
                   sheet = "4. Define Weights",
                   x = as.data.frame(ind_weights),
-                  start_row = 8,
+                  start_row = 9,
                   start_col = 8,
                   col_names = FALSE
                 )
@@ -1235,7 +1235,7 @@ server <- function(input, output, session) {
                   wb,
                   sheet = "4. Define Weights",
                   x = ind_weights,
-                  startRow = 8,
+                  startRow = 9,
                   startCol = 8,
                   colNames = FALSE
                 )
