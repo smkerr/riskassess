@@ -5,6 +5,6 @@ account: smkerr
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16347346
-bundleId: 11357977
+bundleId: 11507006
 url: https://smkerr.shinyapps.io/riskassess/
 version: 1
